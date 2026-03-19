@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS task_user_timers_ti (
 );
 
 -- Populate from existing data: for each assignee, copy the task-level timer info.
--- If task has a running timer, only the first assignee gets it; others start paused.
+-- If task has a running timer, only the first assignee gets it (others start paused).
 INSERT IGNORE INTO task_user_timers_ti (task_id, user_id, dev_seconds, timer_started_at)
 SELECT
   ta.task_id,
