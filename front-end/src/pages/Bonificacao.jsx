@@ -4,6 +4,7 @@ import ProjectModal from '../components/ProjectModal';
 import BonifModal from '../components/BonifModal';
 import CalendarModal from '../components/CalendarModal';
 import { useAuth } from '../contexts/AuthContext';
+import { useDialog } from '../contexts/DialogContext';
 
 const fmtMoney = (val) => {
   if (val == null || val === '') return '—';
@@ -44,7 +45,7 @@ function StatCard({ label, value, icon, color, bg }) {
   );
 }
 
-function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting, canBonify }) {
+function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting, canBonify, readOnly }) {
   return (
     <div className="project-card" style={{ '--card-border': isAwaiting ? '#fde68a' : project.bonificado ? '#bbf7d0' : 'var(--gray-200)' }}>
       {/* Topo: status badge + botões de ação */}
@@ -58,6 +59,7 @@ function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting
           </span>
         </div>
 
+        {!readOnly && (
         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
           {isAwaiting ? (
             <button className="task-action-btn fill-params-btn" title="Preencher parâmetros" onClick={() => onEdit(project)}>
@@ -101,6 +103,7 @@ function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting
             </svg>
           </button>
         </div>
+        )}
       </div>
 
       {/* Título — linha própria, sem concorrer com botões */}
@@ -181,7 +184,9 @@ function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting
 
 export default function Bonificacao() {
   const { user } = useAuth();
-  const isGestor = user?.role === 'gestor';
+  const { confirm, alert } = useDialog();
+  const isGestor = ['gestor', 'superadmin'].includes(user?.role);
+  const isRH = user?.role === 'rh';
   const canBonify = isGestor;
 
   const now = new Date();
@@ -222,17 +227,24 @@ export default function Bonificacao() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Remover este projeto?')) return;
+    const ok = await confirm('Deseja remover este projeto permanentemente?', {
+      title: 'Remover Projeto',
+      variant: 'danger',
+      confirmLabel: 'Remover',
+    });
+    if (!ok) return;
     try { await api.delete(`/projects/${id}`); fetchData(); } catch (err) { console.error(err); }
   };
 
   const handleToggleBonificado = (project) => {
     if (!project.bonificado) {
-      setBonifModal(project); // open approval modal
+      setBonifModal(project);
     } else {
-      // revert bonification directly
-      api.patch(`/projects/${project.id}/bonificar`).then(fetchData).catch(err => {
-        alert(err.response?.data?.error || 'Erro ao reverter bonificação');
+      api.patch(`/projects/${project.id}/bonificar`).then(fetchData).catch(async (err) => {
+        await alert(err.response?.data?.error || 'Erro ao reverter bonificação', {
+          title: 'Erro',
+          variant: 'error',
+        });
       });
     }
   };
@@ -318,19 +330,19 @@ export default function Bonificacao() {
       {/* Stats */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
         <StatCard label="Total de projetos" value={stats?.total}
-          color="#2563eb" bg="#eff6ff"
+          color="var(--blue-600)" bg="var(--blue-50)"
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>}
         />
         <StatCard label="Aguardando parâmetros" value={stats?.awaiting}
-          color="#d97706" bg="#fffbeb"
+          color="var(--amber-600)" bg="var(--amber-50)"
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>}
         />
         <StatCard label="Pendentes de bonificação" value={stats?.pending}
-          color="#2563eb" bg="#eff6ff"
+          color="var(--blue-600)" bg="var(--blue-50)"
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
         />
         <StatCard label="Já bonificados" value={stats?.bonificado}
-          color="#16a34a" bg="#f0fdf4"
+          color="var(--green-600)" bg="var(--green-50)"
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>}
         />
       </div>
@@ -377,6 +389,7 @@ export default function Bonificacao() {
                 onToggleBonificado={handleToggleBonificado}
                 isAwaiting={!!p.awaiting_params}
                 canBonify={canBonify}
+                readOnly={isRH}
               />
             ))}
           </div>
@@ -472,8 +485,8 @@ export default function Bonificacao() {
         .project-metric-value {
           font-size: 13px; font-weight: 600; color: var(--gray-800); line-height: 1.3;
         }
-        .project-metric-value.green { color: #16a34a; }
-        .project-metric-value.blue  { color: #2563eb; }
+        .project-metric-value.green { color: var(--green-600); }
+        .project-metric-value.blue  { color: var(--blue-600); }
         .project-card-footer {
           display: flex;
           align-items: center;
@@ -503,12 +516,12 @@ export default function Bonificacao() {
 
         .task-action-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--gray-200); background: var(--white); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--gray-500); transition: all var(--transition); }
         .task-action-btn:hover { background: var(--gray-100); color: var(--gray-700); border-color: var(--gray-300); }
-        .task-action-btn.red:hover { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
-        .task-action-btn.fill-params-btn { background: #fffbeb; color: #d97706; border-color: #fde68a; }
-        .task-action-btn.fill-params-btn:hover { background: #fef3c7; color: #b45309; border-color: #fcd34d; }
-        .task-action-btn.bonificar-btn:hover { background: #fffbeb; color: #d97706; border-color: #fde68a; }
-        .task-action-btn.bonificado-btn { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
-        .task-action-btn.bonificado-btn:hover { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+        .task-action-btn.red:hover { background: var(--red-50); color: var(--red-600); border-color: var(--red-100); }
+        .task-action-btn.fill-params-btn { background: var(--amber-50); color: var(--amber-600); border-color: var(--amber-100); }
+        .task-action-btn.fill-params-btn:hover { background: var(--amber-100); color: var(--amber-600); border-color: var(--amber-500); }
+        .task-action-btn.bonificar-btn:hover { background: var(--amber-50); color: var(--amber-600); border-color: var(--amber-100); }
+        .task-action-btn.bonificado-btn { background: var(--green-50); color: var(--green-600); border-color: var(--green-100); }
+        .task-action-btn.bonificado-btn:hover { background: var(--red-50); color: var(--red-600); border-color: var(--red-100); }
 
         @media (max-width: 1100px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr; } .tasks-grid { grid-template-columns: 1fr; } .dashboard { padding: 20px 16px; } }

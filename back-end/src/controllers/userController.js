@@ -33,7 +33,11 @@ const createUser = async (req, res) => {
       'SELECT id, username, email, name, role, active, created_at FROM users WHERE id = ?',
       [result.insertId]
     );
-    await record(req.user, 'criou', 'usuario', result.insertId, username);
+    const parts = [];
+    if (name && name !== username) parts.push(`Nome: ${name}`);
+    if (email) parts.push(`E-mail: ${email}`);
+    parts.push(`Cargo: ${role || 'dev'}`);
+    await record(req.user, 'criou', 'usuario', result.insertId, username, parts.join(' · '));
     return res.status(201).json(rows[0]);
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
@@ -54,13 +58,38 @@ const updateUser = async (req, res) => {
     if (existing.length === 0) return res.status(404).json({ error: 'Usuário não encontrado' });
 
     const targetRole = existing[0].role;
+    const isSelf = Number(id) === req.user.id;
 
-    // Gestor cannot touch admin users at all
-    if (actorRole === 'gestor' && targetRole === 'admin') {
-      return res.status(403).json({ error: 'Gestores não podem modificar contas de admin' });
+    // Roles sem permissão de gestão só podem editar a si mesmos (nome, email, senha)
+    if (!['superadmin', 'admin', 'gestor'].includes(actorRole) && !isSelf) {
+      return res.status(403).json({ error: 'Você só pode editar suas próprias informações' });
     }
-    // Only admins can change passwords of other users
-    if (actorRole !== 'admin' && Number(id) !== req.user.id && password && password.trim()) {
+
+    // Hierarquia: superadmin > admin > gestor > demais
+    // Ninguém pode promover/rebaixar para um cargo acima do próprio
+    if (targetRole === 'superadmin' && actorRole !== 'superadmin') {
+      return res.status(403).json({ error: 'Apenas superadmins podem modificar contas de superadmin' });
+    }
+    if (targetRole === 'admin' && !['superadmin'].includes(actorRole)) {
+      return res.status(403).json({ error: 'Apenas superadmins podem modificar contas de admin' });
+    }
+    if (actorRole === 'gestor' && ['admin', 'superadmin'].includes(targetRole)) {
+      return res.status(403).json({ error: 'Gestores não podem modificar contas superiores' });
+    }
+    // Só admin+ pode alterar cargo; ninguém muda o próprio cargo (exceto superadmin)
+    if (role && role !== targetRole) {
+      if (!['admin', 'superadmin'].includes(actorRole)) {
+        return res.status(403).json({ error: 'Apenas admins podem alterar cargos' });
+      }
+      if (actorRole === 'admin' && ['superadmin'].includes(role)) {
+        return res.status(403).json({ error: 'Admins não podem promover a superadmin' });
+      }
+      if (isSelf && actorRole !== 'superadmin') {
+        return res.status(403).json({ error: 'Você não pode alterar o próprio cargo' });
+      }
+    }
+    // Só admin+ pode alterar senhas de outros
+    if (!['admin', 'superadmin'].includes(actorRole) && !isSelf && password && password.trim()) {
       return res.status(403).json({ error: 'Apenas admins podem alterar senhas de outros usuários' });
     }
 
@@ -89,7 +118,13 @@ const updateUser = async (req, res) => {
       'SELECT id, username, email, name, role, active, created_at, updated_at FROM users WHERE id = ?',
       [id]
     );
-    await record(req.user, 'editou', 'usuario', Number(id), rows[0]?.username);
+    const detailParts = [];
+    if (name != null) detailParts.push('nome');
+    if (email != null) detailParts.push('e-mail');
+    if (role != null) detailParts.push('cargo');
+    if (active != null) detailParts.push('status');
+    if (password && password.trim()) detailParts.push('senha');
+    await record(req.user, 'editou', 'usuario', Number(id), rows[0]?.username, detailParts.length ? `Alterado: ${detailParts.join(', ')}` : 'Dados atualizados');
     return res.json(rows[0]);
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
@@ -106,13 +141,19 @@ const deleteUser = async (req, res) => {
     return res.status(400).json({ error: 'Você não pode remover a sua própria conta' });
   }
   try {
-    const [target] = await pool.query('SELECT role FROM users WHERE id = ?', [id]);
-    if (req.user.role === 'gestor' && target[0]?.role === 'admin') {
-      return res.status(403).json({ error: 'Gestores não podem remover contas de admin' });
+    const [target] = await pool.query('SELECT username, role FROM users WHERE id = ?', [id]);
+    if (target[0]?.role === 'superadmin') {
+      return res.status(403).json({ error: 'Contas de superadmin não podem ser removidas' });
+    }
+    if (target[0]?.role === 'admin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Apenas superadmins podem remover contas de admin' });
+    }
+    if (['admin', 'superadmin'].includes(target[0]?.role) && req.user.role === 'gestor') {
+      return res.status(403).json({ error: 'Gestores não podem remover contas superiores' });
     }
     const [result] = await pool.query('DELETE FROM users WHERE id = ?', [id]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Usuário não encontrado' });
-    await record(req.user, 'apagou', 'usuario', Number(id), target[0]?.role ? `${target[0].role}` : null);
+    await record(req.user, 'apagou', 'usuario', Number(id), target[0]?.username, target[0]?.role ? `Cargo: ${target[0].role}` : null);
     return res.json({ message: 'Usuário removido com sucesso' });
   } catch (err) {
     console.error('Erro ao deletar usuário:', err.message);
@@ -127,8 +168,14 @@ const toggleActive = async (req, res) => {
   }
   try {
     const [existing] = await pool.query('SELECT id, active, role FROM users WHERE id = ?', [id]);
-    if (req.user.role === 'gestor' && existing[0]?.role === 'admin') {
-      return res.status(403).json({ error: 'Gestores não podem alterar status de contas de admin' });
+    if (existing[0]?.role === 'superadmin') {
+      return res.status(403).json({ error: 'Contas de superadmin não podem ser desativadas' });
+    }
+    if (existing[0]?.role === 'admin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Apenas superadmins podem alterar status de contas de admin' });
+    }
+    if (['admin', 'superadmin'].includes(existing[0]?.role) && req.user.role === 'gestor') {
+      return res.status(403).json({ error: 'Gestores não podem alterar status de contas superiores' });
     }
     if (existing.length === 0) return res.status(404).json({ error: 'Usuário não encontrado' });
 
@@ -139,7 +186,7 @@ const toggleActive = async (req, res) => {
       'SELECT id, username, email, name, role, active, created_at, updated_at FROM users WHERE id = ?',
       [id]
     );
-    await record(req.user, newActive ? 'ativou' : 'desativou', 'usuario', Number(id), rows[0]?.username);
+    await record(req.user, newActive ? 'ativou' : 'desativou', 'usuario', Number(id), rows[0]?.username, newActive ? 'Conta ativada' : 'Conta desativada');
     return res.json(rows[0]);
   } catch (err) {
     console.error('Erro ao alternar ativo:', err.message);

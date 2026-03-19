@@ -2,14 +2,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useDialog } from '../contexts/DialogContext';
 
-const ROLES = ['admin', 'dev', 'suporte', 'gestor'];
+const ROLES = ['superadmin', 'admin', 'gestor', 'dev', 'suporte', 'rh'];
 
 const roleColors = {
-  admin:   { color: '#7c3aed', bg: '#f5f3ff' },
-  dev:     { color: '#2563eb', bg: '#eff6ff' },
-  suporte: { color: '#0891b2', bg: '#ecfeff' },
-  gestor:  { color: '#d97706', bg: '#fffbeb' },
+  superadmin: { color: '#dc2626', bg: 'var(--red-50)' },
+  admin:      { color: '#7c3aed', bg: 'var(--purple-50)' },
+  dev:        { color: '#2563eb', bg: 'var(--blue-50)'   },
+  suporte:    { color: '#0891b2', bg: 'var(--cyan-50)'   },
+  gestor:     { color: '#d97706', bg: 'var(--amber-50)'  },
+  rh:         { color: '#ec4899', bg: '#fdf2f8'          },
 };
 
 function RoleBadge({ role }) {
@@ -27,9 +30,16 @@ function RoleBadge({ role }) {
   );
 }
 
-function UserModal({ user, onClose, onSave, currentUserRole }) {
+function UserModal({ user, onClose, onSave, currentUserRole, currentUserId }) {
   const isEdit = !!user;
-  const canEditPassword = currentUserRole === 'admin' || !isEdit;
+  const isSelf = user && Number(user.id) === Number(currentUserId);
+  const isRhSelfEdit = currentUserRole === 'rh' && isEdit && isSelf;
+  const canEditPassword = ['admin', 'superadmin'].includes(currentUserRole) || !isEdit || isSelf;
+  const availableRoles = currentUserRole === 'superadmin'
+    ? ROLES
+    : currentUserRole === 'admin'
+      ? ROLES.filter(r => r !== 'superadmin')
+      : ROLES;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({
@@ -53,7 +63,7 @@ function UserModal({ user, onClose, onSave, currentUserRole }) {
         username: form.username.trim(),
         name:     form.name.trim() || form.username.trim(),
         email:    form.email.trim() || null,
-        role:     form.role,
+        ...(!isRhSelfEdit ? { role: form.role } : {}),
         ...(form.password.trim() ? { password: form.password } : {}),
       };
       if (isEdit) await api.put(`/users/${user.id}`, payload);
@@ -115,18 +125,28 @@ function UserModal({ user, onClose, onSave, currentUserRole }) {
                 autoComplete="off" name="new-email" />
             </div>
 
-            <div className="modal-row">
+            <div className="modal-row modal-row-inputs-align">
               <div className="input-group" style={{ flex: 1 }}>
                 <label className="input-label">Cargo</label>
+                {isRhSelfEdit ? (
+                  <>
+                    <input className="input" value={form.role} readOnly disabled style={{ textTransform: 'capitalize', cursor: 'not-allowed' }} />
+                    <span className="input-label-hint">Apenas admin pode alterar cargos.</span>
+                  </>
+                ) : (
                 <select className="input" value={form.role} onChange={set('role')}>
-                  {ROLES.map(r => (
+                  {availableRoles.map(r => (
                     <option key={r} value={r} style={{ textTransform: 'capitalize' }}>{r}</option>
                   ))}
                 </select>
+                )}
               </div>
               {canEditPassword ? (
                 <div className="input-group" style={{ flex: 1 }}>
-                  <label className="input-label">{isEdit ? 'Nova senha (deixe em branco para manter)' : 'Senha *'}</label>
+                  <label className="input-label">{isEdit ? 'Nova senha' : 'Senha *'}</label>
+                  {isEdit && (
+                    <span className="input-label-hint">Deixe em branco para manter a senha atual.</span>
+                  )}
                   <input className="input" type="password" placeholder={isEdit ? '••••••••' : 'Senha'}
                     value={form.password} onChange={set('password')}
                     autoComplete="new-password" name="new-password" />
@@ -135,7 +155,7 @@ function UserModal({ user, onClose, onSave, currentUserRole }) {
                 <div className="input-group" style={{ flex: 1 }}>
                   <label className="input-label">Senha</label>
                   <div style={{ padding: '9px 12px', background: 'var(--gray-50)', border: '1px solid var(--gray-200)', borderRadius: 8, fontSize: 12, color: 'var(--gray-400)' }}>
-                    Alteração de senha disponível apenas para admins
+                    Alteração de senha disponível apenas para admins/superadmins
                   </div>
                 </div>
               )}
@@ -152,9 +172,19 @@ function UserModal({ user, onClose, onSave, currentUserRole }) {
         </form>
       </div>
       <style>{`
-        .modal-error { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 8px; color: #dc2626; font-size: 13px; margin-bottom: 16px; }
+        .modal-error { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--red-50); border: 1px solid var(--red-100); border-radius: 8px; color: var(--red-600); font-size: 13px; margin-bottom: 16px; }
         .modal-row { display: flex; gap: 12px; }
         .modal-row .input-group { margin-bottom: 16px; }
+        .modal-row-inputs-align { align-items: flex-end; }
+        .modal-row-inputs-align .input-group { display: flex; flex-direction: column; }
+        .input-label-hint {
+          display: block;
+          font-size: 11px;
+          font-weight: 400;
+          color: var(--gray-400);
+          line-height: 1.3;
+          margin: -6px 0 6px;
+        }
       `}</style>
     </div>
   );
@@ -163,17 +193,35 @@ function UserModal({ user, onClose, onSave, currentUserRole }) {
 export default function Usuarios() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
+  const { confirm, alert } = useDialog();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState('');
 
+  const isSuperAdmin = currentUser?.role === 'superadmin';
+  const isAdmin = currentUser?.role === 'admin' || isSuperAdmin;
   const isGestor = currentUser?.role === 'gestor';
-  const isAdmin = currentUser?.role === 'admin';
+  const isRH = currentUser?.role === 'rh';
+
+  /** Abrir modal de edição (RH: só o próprio registro) */
   const canEditUser = (targetUser) => {
-    if (isAdmin) return true;
-    if (isGestor && targetUser?.role === 'admin') return false;
+    if (isRH) return Number(targetUser?.id) === Number(currentUser?.id);
+    if (isSuperAdmin) return true;
+    if (currentUser?.role === 'admin' && targetUser?.role === 'superadmin') return false;
+    if (currentUser?.role === 'admin') return true;
+    if (isGestor && ['admin', 'superadmin'].includes(targetUser?.role)) return false;
+    return true;
+  };
+
+  /** Ativar/desativar ou excluir — RH não usa essas ações na lista */
+  const canManageUserLifecycle = (targetUser) => {
+    if (isRH) return false;
+    if (isSuperAdmin) return true;
+    if (currentUser?.role === 'admin' && targetUser?.role === 'superadmin') return false;
+    if (currentUser?.role === 'admin') return true;
+    if (isGestor && ['admin', 'superadmin'].includes(targetUser?.role)) return false;
     return true;
   };
 
@@ -196,17 +244,28 @@ export default function Usuarios() {
       await api.patch(`/users/${user.id}/toggle-active`);
       fetchUsers();
     } catch (err) {
-      alert(err.response?.data?.error || 'Erro ao alterar status');
+      await alert(err.response?.data?.error || 'Erro ao alterar status', {
+        title: 'Erro',
+        variant: 'error',
+      });
     }
   };
 
   const handleDelete = async (user) => {
-    if (!window.confirm(`Remover o usuário "${user.name}"? Esta ação não pode ser desfeita.`)) return;
+    const ok = await confirm(`Remover o usuário "${user.name}"? Esta ação não pode ser desfeita.`, {
+      title: 'Remover Usuário',
+      variant: 'danger',
+      confirmLabel: 'Remover',
+    });
+    if (!ok) return;
     try {
       await api.delete(`/users/${user.id}`);
       fetchUsers();
     } catch (err) {
-      alert(err.response?.data?.error || 'Erro ao remover usuário');
+      await alert(err.response?.data?.error || 'Erro ao remover usuário', {
+        title: 'Erro',
+        variant: 'error',
+      });
     }
   };
 
@@ -227,7 +286,9 @@ export default function Usuarios() {
           </button>
           <div>
             <h1 className="dashboard-title">Usuários</h1>
-            <p className="dashboard-date">Gerenciamento de contas e permissões</p>
+            <p className="dashboard-date">
+              {isRH ? 'Visualização geral — você só pode editar o seu próprio cadastro.' : 'Gerenciamento de contas e permissões'}
+            </p>
           </div>
         </div>
         <div className="dashboard-header-actions">
@@ -237,12 +298,14 @@ export default function Usuarios() {
             </svg>
             Atualizar
           </button>
+          {!isRH && (
           <button className="btn btn-primary" onClick={() => { setEditing(null); setModalOpen(true); }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
             Novo Usuário
           </button>
+          )}
         </div>
       </div>
 
@@ -303,7 +366,7 @@ export default function Usuarios() {
                   <td style={{ fontSize: 13, color: 'var(--gray-500)' }}>{u.email || '—'}</td>
                   <td><RoleBadge role={u.role} /></td>
                   <td>
-                    {canEditUser(u) ? (
+                    {canManageUserLifecycle(u) ? (
                       <button
                         className={`status-toggle ${u.active ? 'active' : 'inactive'}`}
                         onClick={() => handleToggleActive(u)}
@@ -313,7 +376,7 @@ export default function Usuarios() {
                         {u.active ? 'Ativo' : 'Inativo'}
                       </button>
                     ) : (
-                      <span className={`status-toggle status-readonly ${u.active ? 'active' : 'inactive'}`} title="Somente leitura">
+                      <span className={`status-toggle status-readonly ${u.active ? 'active' : 'inactive'}`} title={isRH ? 'Somente leitura (RH)' : 'Somente leitura'}>
                         <span className="status-toggle-dot" />
                         {u.active ? 'Ativo' : 'Inativo'}
                       </span>
@@ -329,12 +392,14 @@ export default function Usuarios() {
                               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                             </svg>
                           </button>
+                          {canManageUserLifecycle(u) && (
                           <button className="task-action-btn red" title="Remover" onClick={() => handleDelete(u)}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <polyline points="3 6 5 6 21 6"/>
                               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
                             </svg>
                           </button>
+                          )}
                         </>
                       ) : (
                         <span style={{ fontSize: 11, color: 'var(--gray-400)', fontStyle: 'italic' }}>restrito</span>
@@ -354,6 +419,7 @@ export default function Usuarios() {
           onClose={() => { setModalOpen(false); setEditing(null); }}
           onSave={() => { setModalOpen(false); setEditing(null); fetchUsers(); }}
           currentUserRole={currentUser?.role}
+          currentUserId={currentUser?.id}
         />
       )}
 
@@ -421,8 +487,8 @@ export default function Usuarios() {
           transition: all var(--transition);
           background: none;
         }
-        .status-toggle.active { color: #16a34a; background: #f0fdf4; border-color: #bbf7d0; }
-        .status-toggle.inactive { color: #6b7280; background: var(--gray-100); border-color: var(--gray-200); }
+        .status-toggle.active { color: var(--green-600); background: var(--green-50); border-color: var(--green-100); }
+        .status-toggle.inactive { color: var(--gray-500); background: var(--gray-100); border-color: var(--gray-200); }
         .status-toggle:hover { filter: brightness(0.93); }
         .status-toggle.status-readonly { cursor: default; pointer-events: none; }
         .status-toggle.status-readonly:hover { filter: none; }
@@ -433,7 +499,7 @@ export default function Usuarios() {
 
         .task-action-btn { width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--gray-200); background: var(--white); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--gray-500); transition: all var(--transition); }
         .task-action-btn:hover { background: var(--gray-100); color: var(--gray-700); border-color: var(--gray-300); }
-        .task-action-btn.red:hover { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+        .task-action-btn.red:hover { background: var(--red-50); color: var(--red-600); border-color: var(--red-100); }
 
         .tasks-loading { display: flex; align-items: center; gap: 10px; padding: 40px 20px; color: var(--gray-400); font-size: 14px; }
       `}</style>

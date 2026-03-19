@@ -84,11 +84,34 @@ const getDashboard = async (req, res) => {
     const allTasks = groupTasks(tasks);
     const completedTasks = groupTasks(completed);
 
+    const [projects] = await pool.query(`
+      SELECT
+        p.id, p.name, p.status, p.awaiting_params, p.bonificado,
+        p.suggested_value, p.approved_value, p.hourly_rate, p.difficulty,
+        p.dev_seconds, p.bonificado_at, p.updated_at,
+        u.id AS resp_id, u.name AS resp_name, u.username AS resp_username,
+        gb.name AS approved_by_name
+      FROM projects_ti p
+      LEFT JOIN users u ON p.responsible_id = u.id
+      LEFT JOIN users gb ON p.bonificado_by = gb.id
+      ORDER BY
+        p.awaiting_params DESC,
+        p.bonificado ASC,
+        p.updated_at DESC
+    `);
+
+    const awaiting = projects.filter(p => p.awaiting_params === 1);
+    const pendingBonif = projects.filter(p => !p.awaiting_params && !p.bonificado);
+    const bonificado = projects.filter(p => p.bonificado === 1);
+
     return res.json({
       pending:   allTasks.filter(t => t.status === 'pending'),
       paused:    allTasks.filter(t => t.status === 'paused'),
       overdue:   allTasks.filter(t => t.status === 'overdue'),
       completed: completedTasks,
+      bonif_awaiting:  awaiting,
+      bonif_pending:   pendingBonif,
+      bonif_approved:  bonificado,
     });
   } catch (err) {
     console.error('Erro modo gestor:', err.message);

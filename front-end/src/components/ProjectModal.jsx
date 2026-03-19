@@ -12,12 +12,32 @@ const formatDevTimeDisplay = (totalSeconds) => {
   return `${hours}h ${minutes}min`;
 };
 
+const devSecondsToHours = (secs) => (secs || 0) / 3600;
+
+const DIFFICULTY_LEVELS = [
+  { key: 'baixa',   label: 'Baixa',   mult: 1.0, color: 'var(--green-600)',  bg: 'var(--green-50)',  border: 'var(--green-200)',  desc: 'Tarefa simples' },
+  { key: 'media',   label: 'Média',   mult: 1.5, color: 'var(--blue-600)',   bg: 'var(--blue-50)',   border: 'var(--blue-200)',   desc: 'Alguma complexidade' },
+  { key: 'alta',    label: 'Alta',    mult: 2.0, color: 'var(--amber-600)',  bg: 'var(--amber-50)',  border: 'var(--amber-200)',  desc: 'Bastante esforço' },
+  { key: 'critica', label: 'Crítica', mult: 3.0, color: 'var(--red-600)',    bg: 'var(--red-50)',    border: 'var(--red-200)',    desc: 'Urgente / alto impacto' },
+];
+
+const getDiffMult = (key) => DIFFICULTY_LEVELS.find(d => d.key === key)?.mult ?? 1.0;
+
+const calcSuggested = (devHours, rate, diffKey) => {
+  const r = parseFloat(rate);
+  if (!Number.isFinite(r) || r <= 0 || devHours <= 0) return null;
+  return (devHours * r * getDiffMult(diffKey)).toFixed(2);
+};
+
 export default function ProjectModal({ project, onClose, onSave }) {
   const isEdit = !!project;
   const isAwaiting = isEdit && project.awaiting_params;
+  const devHours = devSecondsToHours(project?.dev_seconds);
+
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [suggestedAutoCalc, setSuggestedAutoCalc] = useState(false);
 
   const [form, setForm] = useState({
     name:             fmt(project?.name),
@@ -25,6 +45,8 @@ export default function ProjectModal({ project, onClose, onSave }) {
     link:             fmt(project?.link),
     financial_return: fmt(project?.financial_return),
     suggested_value:  fmt(project?.suggested_value),
+    hourly_rate:      fmt(project?.hourly_rate),
+    difficulty:       project?.difficulty || '',
     responsible_id:   fmt(project?.responsible_id),
   });
 
@@ -34,7 +56,26 @@ export default function ProjectModal({ project, onClose, onSave }) {
 
   const set = (field) => (e) => setForm(p => ({ ...p, [field]: e.target.value }));
 
-  const parseSuggestedValue = (val) => {
+  const recalcSuggested = (rate, diffKey) => {
+    const v = calcSuggested(devHours, rate, diffKey);
+    if (v !== null) {
+      setSuggestedAutoCalc(true);
+      setForm(p => ({ ...p, suggested_value: v }));
+    }
+  };
+
+  const handleHourlyRateChange = (e) => {
+    const rate = e.target.value;
+    setForm(p => ({ ...p, hourly_rate: rate }));
+    recalcSuggested(rate, form.difficulty);
+  };
+
+  const handleDifficultyChange = (key) => {
+    setForm(p => ({ ...p, difficulty: key }));
+    recalcSuggested(form.hourly_rate, key);
+  };
+
+  const parseMoney = (val) => {
     if (val == null || val === '') return null;
     const s = String(val).replace(/\s/g, '').replace(/R\$\s?/gi, '').replace(/\./g, '').replace(',', '.');
     const n = parseFloat(s);
@@ -46,8 +87,8 @@ export default function ProjectModal({ project, onClose, onSave }) {
     if (!form.name.trim()) { setError('Nome do projeto é obrigatório'); return; }
 
     if (isAwaiting) {
-      if (!form.link && !form.financial_return && !form.suggested_value) {
-        setError('Preencha ao menos um campo: link, retorno financeiro ou sugestão de valor');
+      if (!form.financial_return && !form.suggested_value && !form.hourly_rate) {
+        setError('Preencha ao menos um campo: taxa por hora, retorno financeiro ou sugestão de valor');
         return;
       }
     }
@@ -60,7 +101,9 @@ export default function ProjectModal({ project, onClose, onSave }) {
         description:      form.description || null,
         link:             form.link || null,
         financial_return: form.financial_return ? String(form.financial_return).trim() : null,
-        suggested_value:  parseSuggestedValue(form.suggested_value),
+        suggested_value:  parseMoney(form.suggested_value),
+        hourly_rate:      parseMoney(form.hourly_rate),
+        difficulty:       form.difficulty || null,
         responsible_id:   form.responsible_id ? Number(form.responsible_id) : null,
       };
 
@@ -120,26 +163,37 @@ export default function ProjectModal({ project, onClose, onSave }) {
             )}
 
             {isAwaiting && (
-              <div style={{ marginBottom: 16, padding: '10px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 13, color: '#92400e' }}>
+              <div style={{ marginBottom: 16, padding: '10px 12px', background: 'var(--amber-50)', border: '1px solid var(--amber-100)', borderRadius: 8, fontSize: 13, color: 'var(--amber-600)' }}>
                 Preencha os dados abaixo para que o projeto fique disponível para bonificação.
               </div>
             )}
 
             <div className="input-group">
               <label className="input-label">Nome do Projeto *</label>
-              <input
-                className="input" type="text"
-                placeholder="Ex.: Sistema de Controle de Estoque"
-                value={form.name} onChange={set('name')} autoFocus
-              />
+              {isAwaiting ? (
+                <div className="input" style={{ color: 'var(--gray-500)', background: 'var(--gray-50)', cursor: 'default', userSelect: 'text' }}>
+                  {form.name}
+                </div>
+              ) : (
+                <input
+                  className="input" type="text"
+                  placeholder="Ex.: Sistema de Controle de Estoque"
+                  value={form.name} onChange={set('name')} autoFocus
+                />
+              )}
             </div>
 
             <div className="input-group">
-              <label className="input-label">O que o projeto faz</label>
+              <label className="input-label">
+                {isAwaiting ? 'O que o projeto entrega (para o negócio)' : 'O que o projeto faz'}
+              </label>
               <textarea
                 className="input"
-                placeholder="Descreva a funcionalidade e impacto do projeto..."
+                placeholder={isAwaiting
+                  ? 'Ex.: Automatiza o envio de relatórios, elimina retrabalho manual no setor financeiro...'
+                  : 'Descreva a funcionalidade e impacto do projeto...'}
                 value={form.description} onChange={set('description')} rows={3}
+                autoFocus={isAwaiting}
               />
             </div>
 
@@ -156,9 +210,12 @@ export default function ProjectModal({ project, onClose, onSave }) {
             )}
 
             <div className="input-group">
-              <label className="input-label">Link do Projeto</label>
+              <label className="input-label">
+                Link do Projeto
+                <span style={{ fontWeight: 400, color: 'var(--gray-400)', marginLeft: 6, fontSize: 11 }}>(opcional)</span>
+              </label>
               <input
-                className="input" type="url" placeholder="https://..."
+                className="input" type="url" placeholder="https://... (deixe em branco se não houver)"
                 value={form.link} onChange={set('link')}
               />
             </div>
@@ -175,20 +232,89 @@ export default function ProjectModal({ project, onClose, onSave }) {
               </p>
             </div>
 
-            <div className="input-group" style={{ marginBottom: 0 }}>
-              <label className="input-label">Sugestão de Bonificação pelo TI (R$)</label>
-              <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--gray-400)', pointerEvents: 'none' }}>
-                  R$
+            {/* Billing: taxa + dificuldade */}
+            <div className="modal-row" style={{ alignItems: 'flex-start' }}>
+              <div className="input-group" style={{ flex: '0 0 140px', marginBottom: 0 }}>
+                <label className="input-label">
+                  Taxa por Hora
+                  <span style={{ fontWeight: 400, color: 'var(--gray-400)', marginLeft: 6, fontSize: 11 }}>R$/h</span>
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--gray-400)', pointerEvents: 'none' }}>R$</span>
+                  <input
+                    className="input" type="number" min="0" step="0.01" placeholder="0,00"
+                    value={form.hourly_rate} onChange={handleHourlyRateChange}
+                    style={{ paddingLeft: 34 }}
+                  />
+                </div>
+              </div>
+
+              <div className="input-group" style={{ flex: 1, marginBottom: 0 }}>
+                <label className="input-label">Dificuldade</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {DIFFICULTY_LEVELS.map(d => {
+                    const active = form.difficulty === d.key;
+                    return (
+                      <button
+                        key={d.key}
+                        type="button"
+                        title={`${d.desc} (×${d.mult})`}
+                        onClick={() => handleDifficultyChange(active ? '' : d.key)}
+                        style={{
+                          flex: 1, padding: '6px 4px', borderRadius: 8, border: `1.5px solid ${active ? d.color : 'var(--gray-200)'}`,
+                          background: active ? d.bg : 'var(--white)', color: active ? d.color : 'var(--gray-500)',
+                          fontSize: 11, fontWeight: active ? 700 : 500, cursor: 'pointer',
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        <span>{d.label}</span>
+                        <span style={{ fontSize: 10, opacity: 0.8 }}>×{d.mult}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Preview do cálculo */}
+            {form.hourly_rate && parseFloat(form.hourly_rate) > 0 && devHours > 0 && (
+              <div style={{
+                background: 'var(--blue-50)', border: '1px solid var(--blue-100)',
+                borderRadius: 8, padding: '8px 12px', fontSize: 12,
+                color: 'var(--blue-600)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+              }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="8"/><polyline points="11 12 12 12 12 16"/>
+                </svg>
+                <span>
+                  {devHours.toFixed(2)}h × R$ {parseFloat(form.hourly_rate).toFixed(2)}/h
+                  {form.difficulty && ` × ${getDiffMult(form.difficulty)} (${DIFFICULTY_LEVELS.find(d => d.key === form.difficulty)?.label})`}
+                  {' = '}
+                  <strong>R$ {calcSuggested(devHours, form.hourly_rate, form.difficulty)}</strong>
                 </span>
+              </div>
+            )}
+
+            {/* Sugestão de valor */}
+            <div className="input-group" style={{ marginBottom: 0 }}>
+              <label className="input-label">
+                Sugestão de Valor (R$)
+                {suggestedAutoCalc && (
+                  <span style={{ fontWeight: 400, color: 'var(--green-600)', marginLeft: 6, fontSize: 11 }}>preenchido pelo cálculo</span>
+                )}
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--gray-400)', pointerEvents: 'none' }}>R$</span>
                 <input
                   className="input" type="number" min="0" step="0.01" placeholder="0,00"
-                  value={form.suggested_value} onChange={set('suggested_value')}
+                  value={form.suggested_value}
+                  onChange={(e) => { setSuggestedAutoCalc(false); set('suggested_value')(e); }}
                   style={{ paddingLeft: 34 }}
                 />
               </div>
               <p style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>
-                Valor que o TI considera justo como bonificação pelo projeto.
+                Ajuste conforme o contexto. O cálculo é uma base de referência.
               </p>
             </div>
           </div>
@@ -215,10 +341,10 @@ export default function ProjectModal({ project, onClose, onSave }) {
           align-items: center;
           gap: 8px;
           padding: 10px 12px;
-          background: #fef2f2;
-          border: 1px solid #fee2e2;
+          background: var(--red-50);
+          border: 1px solid var(--red-100);
           border-radius: 8px;
-          color: #dc2626;
+          color: var(--red-600);
           font-size: 13px;
           margin-bottom: 16px;
         }

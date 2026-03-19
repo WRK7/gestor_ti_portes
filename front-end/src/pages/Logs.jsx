@@ -25,7 +25,19 @@ const formatDt = (d) => {
   });
 };
 
-const ROLE_COLOR = { admin: '#ef4444', gestor: '#6366f1', dev: '#2563eb', suporte: '#f59e0b' };
+const ROLE_COLOR = { superadmin: '#dc2626', admin: '#ef4444', gestor: '#6366f1', dev: '#2563eb', suporte: '#f59e0b', rh: '#ec4899' };
+
+function getTypeLabel(log) {
+  if (log.entity === 'usuario' && log.detail) {
+    const m = log.detail.match(/Cargo:\s*(\w+)/i);
+    if (m) {
+      const role = m[1].toLowerCase();
+      const label = role.charAt(0).toUpperCase() + role.slice(1);
+      return { label, color: ROLE_COLOR[role] || ENTITY_COLOR.usuario };
+    }
+  }
+  return { label: ENTITY_LABEL[log.entity] || log.entity, color: ENTITY_COLOR[log.entity] || '#6b7280' };
+}
 
 function RoleBadge({ role }) {
   const c = ROLE_COLOR[role] || '#6b7280';
@@ -39,32 +51,43 @@ function RoleBadge({ role }) {
 
 export default function Logs() {
   const { user } = useAuth();
-  const isAdmin  = user?.role === 'admin';
+  const isAdmin  = ['admin', 'superadmin'].includes(user?.role);
 
+  // Data de hoje no fuso do usuário (evita "hoje" em UTC, que pode ser outro dia)
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const [logs,    setLogs]    = useState([]);
   const [total,   setTotal]   = useState(0);
+  const [totalByEntity, setTotalByEntity] = useState({ tarefa: 0, projeto: 0, bonificacao: 0, usuario: 0 });
   const [loading, setLoading] = useState(true);
   const [entity,  setEntity]  = useState('');
+  const [date,    setDate]    = useState(today);
   const [search,  setSearch]  = useState('');
   const [page,    setPage]    = useState(0);
-  const PER_PAGE = 50;
+  const PER_PAGE = 10;
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
-      const params = { limit: PER_PAGE, offset: page * PER_PAGE };
+      const params = { limit: PER_PAGE, offset: page * PER_PAGE, date };
       if (entity) params.entity = entity;
       const { data } = await api.get('/logs', { params });
-      setLogs(data.logs);
-      setTotal(data.total);
+      setLogs(data.logs || []);
+      setTotal(data.total ?? 0);
+      if (data.totalByEntity) setTotalByEntity(data.totalByEntity);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [entity, page]);
+  }, [entity, date, page]);
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
+
+  const handleFilterChange = (key) => {
+    setEntity(key);
+    setPage(0);
+  };
 
   const filtered = search
     ? logs.filter(l =>
@@ -115,9 +138,23 @@ export default function Logs() {
       <div className="dashboard-header">
         <div>
           <h1 className="dashboard-title">Logs</h1>
-          <p className="dashboard-date">Histórico de ações do sistema — {total} registros</p>
+          <p className="dashboard-date">
+            {date === today ? 'Hoje' : new Date(date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {entity ? ` · ${ENTITY_FILTERS.find(f => f.key === entity)?.label || entity}` : ''}
+            {' — '}{total} registro{total !== 1 ? 's' : ''}
+          </p>
         </div>
-        <div className="dashboard-header-actions">
+        <div className="dashboard-header-actions" style={{ flexWrap: 'wrap', gap: 8 }}>
+          <input
+            type="date"
+            value={date}
+            onChange={e => { setDate(e.target.value); setPage(0); }}
+            style={{
+              height: 34, padding: '0 10px', fontSize: 13, borderRadius: 8,
+              border: '1px solid var(--gray-200)', background: 'var(--white)', color: 'var(--gray-800)', fontFamily: 'inherit',
+            }}
+            title="Data dos logs"
+          />
           <div style={{ position: 'relative' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
               style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none' }}>
@@ -140,18 +177,22 @@ export default function Logs() {
         </div>
       </div>
 
-      {/* entity filter tabs */}
+      {/* entity filter tabs — contagens vindas do backend (totalByEntity) */}
       <div style={{ marginBottom: 20 }}>
         <div className="filter-tabs">
-          {ENTITY_FILTERS.map(f => (
-            <button
-              key={f.key}
-              className={`filter-tab${entity === f.key ? ' active' : ''}`}
-              onClick={() => { setEntity(f.key); setPage(0); }}
-            >
-              {f.label}
-            </button>
-          ))}
+          {ENTITY_FILTERS.map(f => {
+            const count = f.key ? (totalByEntity[f.key] ?? 0) : (totalByEntity.tarefa + totalByEntity.projeto + totalByEntity.bonificacao + totalByEntity.usuario);
+            return (
+              <button
+                key={f.key || 'all'}
+                className={`filter-tab${entity === f.key ? ' active' : ''}`}
+                onClick={() => handleFilterChange(f.key)}
+              >
+                {f.label}
+                {count !== undefined && <span style={{ opacity: entity === f.key ? 1 : 0.7 }}>({count})</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -165,6 +206,9 @@ export default function Logs() {
             <line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
           </svg>
           <p>Nenhum log encontrado</p>
+          <p style={{ fontSize: 12, color: 'var(--gray-400)', maxWidth: 320, textAlign: 'center' }}>
+            Os logs são criados quando alguém cria/edita tarefas, projetos, usuários ou bonificações. Confira a data acima e faça alguma ação para gerar registros.
+          </p>
         </div>
       ) : (
         <>
@@ -184,7 +228,7 @@ export default function Logs() {
               <tbody>
                 {filtered.map(log => {
                   const ac = ACTION_ICON[log.action] || { icon: '·', color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' };
-                  const ec = ENTITY_COLOR[log.entity] || '#6b7280';
+                  const typeInfo = getTypeLabel(log);
                   return (
                     <tr key={log.id}>
                       <td style={{ paddingRight: 0 }}>
@@ -219,9 +263,9 @@ export default function Logs() {
                       <td>
                         <span style={{
                           fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 20,
-                          color: ec, background: ec + '18', border: `1px solid ${ec}38`,
+                          color: typeInfo.color, background: typeInfo.color + '18', border: `1px solid ${typeInfo.color}38`,
                         }}>
-                          {ENTITY_LABEL[log.entity] || log.entity}
+                          {typeInfo.label}
                         </span>
                       </td>
                       <td style={{ fontSize: 13, color: 'var(--gray-700)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

@@ -21,3 +21,6 @@ CREATE TABLE IF NOT EXISTS projects_ti (
 
 ALTER TABLE projects_ti MODIFY COLUMN financial_return TEXT NULL;
 ALTER TABLE projects_ti MODIFY COLUMN suggested_value DECIMAL(14, 2) NULL;
+ALTER TABLE projects_ti ADD COLUMN IF NOT EXISTS hourly_rate DECIMAL(10, 2) NULL;
+ALTER TABLE projects_ti ADD COLUMN IF NOT EXISTS approved_value DECIMAL(14, 2) NULL;
+ALTER TABLE projects_ti ADD COLUMN IF NOT EXISTS difficulty ENUM('baixa','media','alta','critica') NULL;

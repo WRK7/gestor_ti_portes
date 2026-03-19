@@ -8,6 +8,7 @@ const projectRoutes = require('./routes/projects');
 const userRoutes = require('./routes/users');
 const managerRoutes = require('./routes/manager');
 const logRoutes     = require('./routes/logs');
+const notifRoutes   = require('./routes/notifications');
 
 const app = express();
 
@@ -30,6 +31,7 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/manager', managerRoutes);
 app.use('/api/logs',    logRoutes);
+app.use('/api/notifications', notifRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada' });

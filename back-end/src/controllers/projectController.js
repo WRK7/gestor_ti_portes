@@ -1,5 +1,6 @@
 const pool  = require('../config/database');
 const { record } = require('../utils/log');
+const { notify, notifyMultiple } = require('./notificationController');
 
 const projectSelect = `
   SELECT
@@ -10,6 +11,30 @@ const projectSelect = `
   FROM projects_ti p
   LEFT JOIN users u  ON p.responsible_id = u.id
   LEFT JOIN users cb ON p.created_by      = cb.id`;
+
+const canManageProject = async (user, projectId) => {
+  if (['superadmin', 'admin', 'gestor'].includes(user.role)) return true;
+
+  const [rows] = await pool.query(
+    `SELECT 1
+     FROM projects_ti p
+     WHERE p.id = ?
+       AND (
+         p.created_by = ?
+         OR p.responsible_id = ?
+         OR EXISTS (
+           SELECT 1
+           FROM task_assignees_ti ta
+           WHERE ta.task_id = p.source_task_id
+             AND ta.user_id = ?
+         )
+       )
+     LIMIT 1`,
+    [projectId, user.id, user.id, user.id]
+  );
+
+  return rows.length > 0;
+};
 
 const getAllProjects = async (req, res) => {
   try {
@@ -97,7 +122,7 @@ const createProject = async (req, res) => {
     );
 
     const [rows] = await pool.query(`${projectSelect} WHERE p.id = ?`, [result.insertId]);
-    await record(req.user, 'criou', 'projeto', result.insertId, name);
+    await record(req.user, 'criou', 'projeto', result.insertId, name, 'Projeto criado manualmente');
     return res.status(201).json(rows[0]);
   } catch (err) {
     console.error('Erro ao criar projeto:', err);
@@ -135,16 +160,36 @@ const createFromTask = async (req, res) => {
     );
     const responsibleId = assignees.length > 0 ? assignees[0].user_id : null;
 
+    // Soma dos timers individuais (mais preciso que dev_seconds da tarefa)
+    const [timerSum] = await pool.query(
+      'SELECT COALESCE(SUM(dev_seconds), 0) AS total FROM task_user_timers_ti WHERE task_id = ?',
+      [taskId]
+    );
+    const totalDevSeconds = timerSum[0].total || task.dev_seconds || 0;
+
     const [result] = await pool.query(
       `INSERT INTO projects_ti
         (name, description, status, progress, dev_seconds, source_task_id,
          responsible_id, created_by, awaiting_params, bonificado)
-       VALUES (?, ?, 'completed', 100, ?, ?, ?, ?, 1, 0)`,
-      [task.title, task.description || null, task.dev_seconds || 0, taskId, responsibleId, req.user.id]
+       VALUES (?, NULL, 'completed', 100, ?, ?, ?, ?, 1, 0)`,
+      [task.title, totalDevSeconds, taskId, responsibleId, req.user.id]
     );
 
     const [rows] = await pool.query(`${projectSelect} WHERE p.id = ?`, [result.insertId]);
-    await record(req.user, 'enviou para bonificação', 'projeto', result.insertId, task.title);
+    await record(req.user, 'enviou para bonificação', 'projeto', result.insertId, task.title, `A partir da tarefa #${taskId}`);
+
+    const [allAssignees] = await pool.query(
+      'SELECT user_id FROM task_assignees_ti WHERE task_id = ?', [taskId]
+    );
+    const assigneeIds = allAssignees.map(a => a.user_id);
+    await notifyMultiple(
+      assigneeIds,
+      'bonif_pending',
+      'Parâmetros pendentes',
+      `O projeto "${task.title}" foi enviado para bonificação e precisa que você preencha os parâmetros.`,
+      '/bonificacao'
+    );
+
     return res.status(201).json(rows[0]);
   } catch (err) {
     console.error('Erro ao criar projeto a partir da tarefa:', err);
@@ -157,14 +202,19 @@ const updateProject = async (req, res) => {
   const {
     name, description, status, link,
     progress, dev_seconds, financial_return,
-    suggested_value, responsible_id,
+    suggested_value, responsible_id, hourly_rate, difficulty,
   } = req.body;
 
   try {
     const [existing] = await pool.query('SELECT id, name, awaiting_params FROM projects_ti WHERE id = ?', [id]);
     if (existing.length === 0) return res.status(404).json({ error: 'Projeto não encontrado' });
 
-    const hasParams = link || financial_return || suggested_value;
+    const allowed = await canManageProject(req.user, id);
+    if (!allowed) {
+      return res.status(403).json({ error: 'Você não tem permissão para editar este projeto/bonificação' });
+    }
+
+    const hasParams = financial_return || suggested_value || hourly_rate;
     const newAwaitingParams = hasParams ? 0 : existing[0].awaiting_params;
 
     await pool.query(
@@ -177,17 +227,33 @@ const updateProject = async (req, res) => {
         dev_seconds      = COALESCE(?, dev_seconds),
         financial_return = COALESCE(?, financial_return),
         suggested_value  = COALESCE(?, suggested_value),
+        hourly_rate      = COALESCE(?, hourly_rate),
+        difficulty       = COALESCE(?, difficulty),
         responsible_id   = COALESCE(?, responsible_id),
         awaiting_params  = ?,
         updated_at       = NOW()
       WHERE id = ?`,
       [name, description, status, link, progress, dev_seconds,
-       financial_return, suggested_value, responsible_id, newAwaitingParams, id]
+       financial_return, suggested_value, hourly_rate ?? null, difficulty ?? null, responsible_id, newAwaitingParams, id]
     );
 
     const [rows] = await pool.query(`${projectSelect} WHERE p.id = ?`, [id]);
     const projectName = rows[0]?.name || existing[0].name;
-    await record(req.user, 'editou', 'projeto', Number(id), projectName);
+    await record(req.user, 'editou', 'projeto', Number(id), projectName, hasParams ? 'Parâmetros preenchidos' : 'Dados atualizados');
+
+    if (hasParams && existing[0].awaiting_params && newAwaitingParams === 0) {
+      const [gestores] = await pool.query(
+        "SELECT id FROM users WHERE role IN ('gestor','superadmin') AND active = 1"
+      );
+      await notifyMultiple(
+        gestores.map(g => g.id),
+        'bonif_ready',
+        'Bonificação pronta para aprovação',
+        `O projeto "${projectName}" teve os parâmetros preenchidos e está aguardando aprovação.`,
+        '/bonificacao'
+      );
+    }
+
     return res.json(rows[0]);
   } catch (err) {
     console.error('Erro ao atualizar projeto:', err.message || err);
@@ -197,10 +263,17 @@ const updateProject = async (req, res) => {
 
 const deleteProject = async (req, res) => {
   try {
-    const [existing] = await pool.query('SELECT name FROM projects_ti WHERE id = ?', [req.params.id]);
+    const [existing] = await pool.query('SELECT id, name FROM projects_ti WHERE id = ?', [req.params.id]);
+    if (existing.length === 0) return res.status(404).json({ error: 'Projeto não encontrado' });
+
+    const allowed = await canManageProject(req.user, req.params.id);
+    if (!allowed) {
+      return res.status(403).json({ error: 'Você não tem permissão para remover este projeto/bonificação' });
+    }
+
     const [result] = await pool.query('DELETE FROM projects_ti WHERE id = ?', [req.params.id]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Projeto não encontrado' });
-    await record(req.user, 'apagou', 'projeto', Number(req.params.id), existing[0]?.name);
+    await record(req.user, 'apagou', 'projeto', Number(req.params.id), existing[0]?.name, 'Projeto removido');
     return res.json({ message: 'Projeto removido com sucesso' });
   } catch (err) {
     console.error('Erro ao deletar projeto:', err);
@@ -212,7 +285,7 @@ const toggleBonificado = async (req, res) => {
   const { id } = req.params;
   const { approved_value } = req.body; // optional override value from gestor
 
-  if (req.user.role !== 'gestor') {
+  if (!['gestor', 'superadmin'].includes(req.user.role)) {
     return res.status(403).json({ error: 'Apenas o gestor pode aprovar bonificações' });
   }
 
@@ -246,6 +319,28 @@ const toggleBonificado = async (req, res) => {
     const action = newVal ? 'aprovou bonificação' : 'reverteu bonificação';
     const detail = newVal && finalValue != null ? `Valor aprovado: R$ ${finalValue}` : null;
     await record(req.user, action, 'bonificacao', Number(id), existing[0].name, detail);
+
+    if (newVal) {
+      const [proj] = await pool.query('SELECT responsible_id, source_task_id FROM projects_ti WHERE id = ?', [id]);
+      const notifUsers = [];
+      if (proj[0]?.responsible_id) notifUsers.push(proj[0].responsible_id);
+      if (proj[0]?.source_task_id) {
+        const [tas] = await pool.query(
+          'SELECT user_id FROM task_assignees_ti WHERE task_id = ?', [proj[0].source_task_id]
+        );
+        tas.forEach(t => notifUsers.push(t.user_id));
+      }
+      const fmtVal = finalValue != null
+        ? Number(finalValue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+        : '';
+      await notifyMultiple(
+        notifUsers.filter(uid => uid !== req.user.id),
+        'bonif_approved',
+        'Bonificação aprovada!',
+        `O projeto "${existing[0].name}" foi aprovado${fmtVal ? ` com valor de ${fmtVal}` : ''}.`,
+        '/billing'
+      );
+    }
 
     const [rows] = await pool.query(`${projectSelect} WHERE p.id = ?`, [id]);
     return res.json(rows[0]);
@@ -351,6 +446,70 @@ const getPendingByUser = async (req, res) => {
   }
 };
 
+const getBillingReport = async (req, res) => {
+  const { month, year, responsible_id } = req.query;
+
+  let where = `WHERE p.bonificado = 1 AND p.bonificado_at IS NOT NULL`;
+  const params = [];
+
+  if (month && year) {
+    where += ` AND MONTH(p.bonificado_at) = ? AND YEAR(p.bonificado_at) = ?`;
+    params.push(Number(month), Number(year));
+  }
+
+  if (['gestor', 'admin', 'superadmin'].includes(req.user.role) && responsible_id) {
+    where += ` AND p.responsible_id = ?`;
+    params.push(Number(responsible_id));
+  }
+
+  try {
+    const [rows] = await pool.query(`
+      SELECT
+        p.*,
+        u.name      AS responsible_name,
+        u.username  AS responsible_username,
+        u.role      AS responsible_role,
+        cb.name     AS created_by_name,
+        gb.name     AS bonificado_by_name,
+        t.title     AS source_task_title
+      FROM projects_ti p
+      LEFT JOIN users u   ON p.responsible_id = u.id
+      LEFT JOIN users cb  ON p.created_by      = cb.id
+      LEFT JOIN users gb  ON p.bonificado_by   = gb.id
+      LEFT JOIN tasks_ti t ON p.source_task_id  = t.id
+      ${where}
+      ORDER BY p.bonificado_at DESC
+    `, params);
+
+    const taskIds = rows.map(r => r.source_task_id).filter(Boolean);
+    let assigneesMap = {};
+    if (taskIds.length) {
+      const [aRows] = await pool.query(
+        `SELECT ta.task_id, u.id, u.name, u.username, u.role
+         FROM task_assignees_ti ta
+         JOIN users u ON u.id = ta.user_id
+         WHERE ta.task_id IN (?)`,
+        [taskIds]
+      );
+      assigneesMap = aRows.reduce((map, row) => {
+        if (!map[row.task_id]) map[row.task_id] = [];
+        map[row.task_id].push({ id: row.id, name: row.name, username: row.username, role: row.role });
+        return map;
+      }, {});
+    }
+
+    const result = rows.map(p => ({
+      ...p,
+      collaborators: p.source_task_id ? (assigneesMap[p.source_task_id] || []) : [],
+    }));
+
+    return res.json(result);
+  } catch (err) {
+    console.error('Erro ao buscar relatório de billing:', err);
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+};
+
 module.exports = {
   getAllProjects,
   getProjectById,
@@ -363,4 +522,5 @@ module.exports = {
   getMonthlyByUser,
   getPendingByUser,
   toggleBonificado,
+  getBillingReport,
 };

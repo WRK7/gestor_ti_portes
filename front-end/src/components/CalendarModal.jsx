@@ -47,9 +47,14 @@ export default function CalendarModal({ month, year, onClose }) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Build day→projects map from byUser data
+  // Filter byUser by selected agent (affects calendar grid, legend and total)
+  const visibleByUser = selUser
+    ? byUser.filter(u => String(u.id) === String(selUser))
+    : byUser;
+
+  // Build day→projects map only from visible users
   const dayMap = {};
-  byUser.forEach(u => {
+  visibleByUser.forEach(u => {
     const projects = typeof u.projects === 'string' ? JSON.parse(u.projects) : (u.projects || []);
     projects.forEach(p => {
       if (!p.bonificado_at) return;
@@ -62,7 +67,7 @@ export default function CalendarModal({ month, year, onClose }) {
   const cells     = buildCalendar(year, month);
   const today     = new Date();
   const isThisMonth = today.getFullYear() === year && today.getMonth() + 1 === month;
-  const totalMonth  = byUser.reduce((acc, u) => acc + Number(u.total_value || 0), 0);
+  const totalMonth  = visibleByUser.reduce((acc, u) => acc + Number(u.total_value || 0), 0);
 
   const filteredPending = selUser
     ? pending.filter(p => String(p.responsible_id) === String(selUser))
@@ -81,7 +86,7 @@ export default function CalendarModal({ month, year, onClose }) {
         {/* ── header ── */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 28px', borderBottom: '1px solid var(--gray-100)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--blue-50)', color: 'var(--blue-600)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
                 <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
@@ -96,9 +101,9 @@ export default function CalendarModal({ month, year, onClose }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {/* total badge */}
-            <div style={{ padding: '8px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, textAlign: 'center' }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total a pagar no mês</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: '#16a34a', lineHeight: 1.2 }}>{fmtMoney(totalMonth)}</div>
+            <div style={{ padding: '8px 16px', background: 'var(--green-50)', border: '1px solid var(--green-100)', borderRadius: 10, textAlign: 'center' }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--green-600)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total a pagar no mês</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--green-600)', lineHeight: 1.2 }}>{fmtMoney(totalMonth)}</div>
             </div>
             <button onClick={onClose} style={{ background: 'var(--gray-100)', border: 'none', borderRadius: 10, width: 36, height: 36, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-500)' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -138,27 +143,27 @@ export default function CalendarModal({ month, year, onClose }) {
                         minHeight: 80,
                         borderRadius: 10,
                         padding: '8px 8px 6px',
-                        background: day ? (isToday ? '#eff6ff' : 'var(--gray-50)') : 'transparent',
-                        border: day ? `1px solid ${isToday ? '#bfdbfe' : 'var(--gray-100)'}` : 'none',
+                        background: day ? (isToday ? 'var(--blue-50)' : 'var(--gray-50)') : 'transparent',
+                        border: day ? `1px solid ${isToday ? 'var(--blue-100)' : 'var(--gray-100)'}` : 'none',
                         position: 'relative',
                       }}>
                         {day && (
                           <>
                             <div style={{
                               fontSize: 12, fontWeight: isToday ? 700 : 500,
-                              color: isToday ? '#2563eb' : 'var(--gray-500)',
+                              color: isToday ? 'var(--blue-600)' : 'var(--gray-500)',
                               marginBottom: 5,
                             }}>
                               {day}
                               {isToday && (
-                                <span style={{ marginLeft: 4, fontSize: 9, fontWeight: 700, background: '#2563eb', color: '#fff', borderRadius: 20, padding: '1px 5px' }}>hoje</span>
+                                <span style={{ marginLeft: 4, fontSize: 9, fontWeight: 700, background: 'var(--blue-600)', color: 'var(--gray-50)', borderRadius: 20, padding: '1px 5px' }}>hoje</span>
                               )}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                               {(dayMap[day] || []).map((p, pi) => (
                                 <div key={pi} style={{
                                   fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 5,
-                                  background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0',
+                                  background: 'var(--green-50)', color: 'var(--green-600)', border: '1px solid var(--green-100)',
                                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                   cursor: 'default',
                                 }} title={`${p.name} — ${fmtMoney(p.approved_value ?? p.suggested_value)}`}>
@@ -178,7 +183,7 @@ export default function CalendarModal({ month, year, onClose }) {
                   <div style={{ marginTop: 16, padding: '12px 14px', background: 'var(--gray-50)', borderRadius: 10, border: '1px solid var(--gray-100)' }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Bonificações no mês</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {byUser.map(u => {
+                      {visibleByUser.map(u => {
                         const projects = typeof u.projects === 'string' ? JSON.parse(u.projects) : (u.projects || []);
                         return (
                           <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'var(--white)', border: '1px solid var(--gray-200)', borderRadius: 8 }}>
@@ -186,7 +191,7 @@ export default function CalendarModal({ month, year, onClose }) {
                               {(u.name||u.username).split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase()}
                             </span>
                             <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--gray-700)' }}>{u.name || u.username}</span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a' }}>{fmtMoney(u.total_value)}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green-600)' }}>{fmtMoney(u.total_value)}</span>
                           </div>
                         );
                       })}
@@ -230,13 +235,13 @@ export default function CalendarModal({ month, year, onClose }) {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {filteredPending.map(p => (
-                    <div key={p.id} style={{ padding: '10px 12px', background: 'var(--gray-50)', border: '1px solid #fde68a', borderRadius: 10 }}>
+                    <div key={p.id} style={{ padding: '10px 12px', background: 'var(--gray-50)', border: '1px solid var(--amber-100)', borderRadius: 10 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-900)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {p.name}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         <span style={{ fontSize: 11, color: 'var(--gray-500)' }}>{p.responsible_name || '—'}</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#d97706', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber-600)', whiteSpace: 'nowrap' }}>
                           {fmtMoney(p.suggested_value)}
                         </span>
                       </div>
@@ -244,9 +249,9 @@ export default function CalendarModal({ month, year, onClose }) {
                   ))}
 
                   {/* pending total */}
-                  <div style={{ marginTop: 4, padding: '10px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#d97706', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total pendente</span>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: '#d97706' }}>
+                  <div style={{ marginTop: 4, padding: '10px 12px', background: 'var(--amber-50)', border: '1px solid var(--amber-100)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber-600)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total pendente</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--amber-600)' }}>
                       {fmtMoney(filteredPending.reduce((a, p) => a + Number(p.suggested_value || 0), 0))}
                     </span>
                   </div>

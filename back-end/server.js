@@ -9,7 +9,16 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 const runMigrations = async () => {
   try {
-    const migrationFiles = ['000_create_users.sql', '000_seed_admin.sql', '001_create_tasks.sql', '002_create_projects.sql', '003_create_logs.sql'];
+    const migrationFiles = [
+      '000_create_users.sql',
+      '000_seed_admin.sql',
+      '001_create_tasks.sql',
+      '002_create_projects.sql',
+      '003_create_logs.sql',
+      '004_create_notifications.sql',
+      '005_create_task_user_timers.sql',
+      '006_add_roles.sql',
+    ];
     let sql = '';
     for (const file of migrationFiles) {
       sql += fs.readFileSync(path.join(__dirname, 'src', 'migrations', file), 'utf8') + '\n';
@@ -36,6 +45,17 @@ const runMigrations = async () => {
 };
 
 const start = async () => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    conn.release();
+    console.log('✅ Conectado ao MySQL');
+  } catch (err) {
+    console.error('❌ Não foi possível conectar ao MySQL:', err.message);
+    console.error('   Verifique: 1) MySQL/MariaDB está rodando?  2) .env (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)');
+    process.exit(1);
+  }
+
   await runMigrations();
 
   app.listen(PORT, HOST, () => {

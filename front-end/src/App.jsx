@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { DialogProvider } from './contexts/DialogContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Bonificacao from './pages/Bonificacao';
@@ -8,6 +9,8 @@ import Configuracoes from './pages/Configuracoes';
 import Usuarios from './pages/Usuarios';
 import ModoGestor from './pages/ModoGestor';
 import Logs from './pages/Logs';
+import Billing from './pages/Billing';
+import Sobre from './pages/Sobre';
 import Layout from './components/Layout';
 
 const PrivateRoute = ({ children }) => {
@@ -37,6 +40,7 @@ const RoleRoute = ({ roles, children }) => {
 export default function App() {
   return (
     <ThemeProvider>
+    <DialogProvider>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -45,15 +49,18 @@ export default function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="bonificacao" element={<Bonificacao />} />
+            <Route path="billing" element={<Billing />} />
             <Route path="configuracoes" element={<Configuracoes />} />
             <Route path="configuracoes/usuarios" element={<Usuarios />} />
-            <Route path="modo-gestor" element={<RoleRoute roles={['gestor','admin']}><ModoGestor /></RoleRoute>} />
-            <Route path="logs" element={<RoleRoute roles={['gestor','admin']}><Logs /></RoleRoute>} />
+            <Route path="modo-gestor" element={<RoleRoute roles={['gestor','admin','superadmin']}><ModoGestor /></RoleRoute>} />
+            <Route path="logs" element={<RoleRoute roles={['gestor','admin','superadmin']}><Logs /></RoleRoute>} />
+            <Route path="configuracoes/sobre" element={<Sobre />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </DialogProvider>
     </ThemeProvider>
   );
 }

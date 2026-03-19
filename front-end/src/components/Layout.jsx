@@ -1,7 +1,76 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import api from '../services/api';
+
+const ORIGINAL_FAVICON = '/favicon.svg';
+
+function drawFaviconBadge(count) {
+  const link = document.querySelector("link[rel~='icon']") || document.createElement('link');
+  link.rel = 'icon';
+
+  if (!count) {
+    link.href = ORIGINAL_FAVICON;
+    link.type = 'image/svg+xml';
+    document.head.appendChild(link);
+    document.title = 'Gestor TI';
+    return;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+
+  const img = new Image();
+  img.onload = () => {
+    ctx.drawImage(img, 0, 0, 64, 64);
+
+    const label = count > 99 ? '99+' : String(count);
+    const badgeW = Math.max(28, ctx.measureText(label).width + 14);
+    const badgeH = 26;
+    const bx = 64 - badgeW;
+    const by = 0;
+
+    ctx.beginPath();
+    ctx.roundRect(bx, by, badgeW, badgeH, 8);
+    ctx.fillStyle = '#ef4444';
+    ctx.fill();
+
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, bx + badgeW / 2, by + badgeH / 2 + 1);
+
+    link.type = 'image/png';
+    link.href = canvas.toDataURL('image/png');
+    document.head.appendChild(link);
+  };
+  img.src = ORIGINAL_FAVICON;
+
+  document.title = `(${count > 99 ? '99+' : count}) Gestor TI`;
+}
+
+function requestNativeNotifPermission() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+function showNativeNotification(title, body) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  if (document.hasFocus()) return;
+  try {
+    new Notification(title, {
+      body,
+      icon: ORIGINAL_FAVICON,
+      tag: 'gestor-ti-notif',
+    });
+  } catch (_) { /* mobile / insecure context */ }
+}
 
 const navItems = [
   {
@@ -25,12 +94,24 @@ const navItems = [
     ),
   },
   {
-    to: '/configuracoes',
-    label: 'Configurações',
+    to: '/modo-gestor',
+    label: 'Modo Gestor',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+    ),
+    managerOnly: true,
+  },
+  {
+    to: '/billing',
+    label: 'Billing',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="18" x2="12" y2="12"/>
+        <line x1="9" y1="15" x2="15" y2="15"/>
       </svg>
     ),
   },
@@ -49,24 +130,105 @@ const navItems = [
     managerOnly: true,
   },
   {
-    to: '/modo-gestor',
-    label: 'Modo Gestor',
+    to: '/configuracoes',
+    label: 'Configurações',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
       </svg>
     ),
-    managerOnly: true,
   },
 ];
 
-const isManagerRole = (role) => ['gestor', 'admin'].includes(role);
+const isManagerRole = (role) => ['gestor', 'admin', 'superadmin'].includes(role);
 
 export default function Layout() {
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [notifs, setNotifs] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifs, setShowNotifs] = useState(false);
+  const notifRef = useRef(null);
+
+  const prevUnreadRef = useRef(0);
+  const lastSeenIdRef = useRef(0);
+
+  const fetchUnread = useCallback(() => {
+    api.get('/notifications/unread-count').then(r => {
+      const newCount = r.data.count;
+      setUnreadCount(newCount);
+
+      if (newCount > prevUnreadRef.current) {
+        api.get('/notifications').then(nr => {
+          const fresh = nr.data;
+          setNotifs(fresh);
+          const newOnes = fresh.filter(n => !n.is_read && n.id > lastSeenIdRef.current);
+          if (newOnes.length && lastSeenIdRef.current > 0) {
+            const latest = newOnes[0];
+            showNativeNotification(latest.title, latest.message);
+          }
+          if (fresh.length) lastSeenIdRef.current = Math.max(...fresh.map(n => n.id));
+        }).catch(() => {});
+      }
+
+      prevUnreadRef.current = newCount;
+    }).catch(() => {});
+  }, []);
+
+  const fetchNotifs = useCallback(() => {
+    api.get('/notifications').then(r => {
+      setNotifs(r.data);
+      if (r.data.length) lastSeenIdRef.current = Math.max(...r.data.map(n => n.id));
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    requestNativeNotifPermission();
+    fetchUnread();
+    const id = setInterval(fetchUnread, 15000);
+    return () => clearInterval(id);
+  }, [fetchUnread]);
+
+  useEffect(() => {
+    drawFaviconBadge(unreadCount);
+    return () => {
+      drawFaviconBadge(0);
+    };
+  }, [unreadCount]);
+
+  useEffect(() => {
+    if (!showNotifs) return;
+    const handleClick = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotifs(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showNotifs]);
+
+  const handleBellClick = () => {
+    if (!showNotifs) fetchNotifs();
+    setShowNotifs(p => !p);
+  };
+
+  const handleMarkRead = async (id) => {
+    await api.patch(`/notifications/${id}/read`).catch(() => {});
+    setNotifs(p => p.map(n => n.id === id ? { ...n, is_read: 1 } : n));
+    setUnreadCount(p => Math.max(0, p - 1));
+  };
+
+  const handleMarkAllRead = async () => {
+    await api.patch('/notifications/read-all').catch(() => {});
+    setNotifs(p => p.map(n => ({ ...n, is_read: 1 })));
+    setUnreadCount(0);
+  };
+
+  const handleNotifClick = (notif) => {
+    if (!notif.is_read) handleMarkRead(notif.id);
+    if (notif.link) navigate(notif.link);
+    setShowNotifs(false);
+  };
 
   const handleLogout = () => {
     logout();
@@ -110,32 +272,49 @@ export default function Layout() {
           ))}
         </nav>
 
-        <div className="sidebar-theme">
-          <button
-            className="theme-toggle"
-            onClick={toggleTheme}
-            title={theme === 'light' ? 'Ativar modo escuro' : 'Ativar modo claro'}
-          >
-            {theme === 'light' ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5"/>
-                <line x1="12" y1="1" x2="12" y2="3"/>
-                <line x1="12" y1="21" x2="12" y2="23"/>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                <line x1="1" y1="12" x2="3" y2="12"/>
-                <line x1="21" y1="12" x2="23" y2="12"/>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-              </svg>
-            )}
-            <span>{theme === 'light' ? 'Modo escuro' : 'Modo claro'}</span>
+        {/* Notifications bell */}
+        <div className="sidebar-notif-area" ref={notifRef}>
+          <button className="sidebar-notif-btn" onClick={handleBellClick} title="Notificações">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <span>Notificações</span>
+            {unreadCount > 0 && <span className="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
           </button>
+
+          {showNotifs && (
+            <div className="notif-dropdown">
+              <div className="notif-dropdown-header">
+                <span className="notif-dropdown-title">Notificações</span>
+                {unreadCount > 0 && (
+                  <button className="notif-read-all" onClick={handleMarkAllRead}>Marcar todas como lidas</button>
+                )}
+              </div>
+              <div className="notif-dropdown-list">
+                {notifs.length === 0 ? (
+                  <div className="notif-empty">Sem notificações</div>
+                ) : notifs.map(n => (
+                  <button
+                    key={n.id}
+                    className={`notif-item${n.is_read ? '' : ' notif-unread'}`}
+                    onClick={() => handleNotifClick(n)}
+                  >
+                    <div className="notif-dot-col">
+                      {!n.is_read && <span className="notif-dot" />}
+                    </div>
+                    <div className="notif-content">
+                      <p className="notif-item-title">{n.title}</p>
+                      <p className="notif-item-msg">{n.message}</p>
+                      <p className="notif-item-time">{new Date(n.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+
 
         <div className="sidebar-footer">
           <div className="sidebar-user" onClick={() => setShowUserMenu(p => !p)}>
@@ -251,29 +430,6 @@ export default function Layout() {
           background: rgba(255,255,255,0.15);
           color: rgba(255,255,255,0.7);
         }
-        .sidebar-theme {
-          padding: 8px 12px;
-        }
-        .theme-toggle {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          width: 100%;
-          padding: 8px 10px;
-          border: none;
-          border-radius: var(--radius-sm);
-          background: transparent;
-          color: var(--gray-500);
-          font-size: 13px;
-          font-weight: 500;
-          font-family: inherit;
-          cursor: pointer;
-          transition: all var(--transition);
-        }
-        .theme-toggle:hover {
-          background: var(--gray-100);
-          color: var(--gray-900);
-        }
         .sidebar-footer {
           padding: 12px;
           border-top: 1px solid var(--gray-100);
@@ -330,6 +486,144 @@ export default function Layout() {
         .sidebar-logout:hover {
           background: var(--red-50);
           color: var(--red-500);
+        }
+
+        /* Notification bell */
+        .sidebar-notif-area {
+          position: relative;
+          padding: 4px 12px;
+        }
+        .sidebar-notif-btn {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
+          padding: 8px 12px;
+          border-radius: 8px;
+          border: none;
+          background: none;
+          cursor: pointer;
+          color: var(--gray-500);
+          font-size: 13px;
+          font-weight: 500;
+          transition: all 0.15s;
+          position: relative;
+        }
+        .sidebar-notif-btn:hover {
+          background: var(--gray-50);
+          color: var(--gray-700);
+        }
+        .notif-badge {
+          margin-left: auto;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 18px;
+          height: 18px;
+          border-radius: 10px;
+          background: var(--red-500);
+          color: #fff;
+          font-size: 10px;
+          font-weight: 700;
+          padding: 0 5px;
+        }
+
+        /* Dropdown */
+        .notif-dropdown {
+          position: absolute;
+          left: calc(100% + 8px);
+          bottom: 0;
+          width: 340px;
+          max-height: 440px;
+          background: var(--white);
+          border: 1px solid var(--gray-200);
+          border-radius: 12px;
+          box-shadow: var(--shadow-xl);
+          z-index: 1000;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .notif-dropdown-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 16px;
+          border-bottom: 1px solid var(--gray-100);
+        }
+        .notif-dropdown-title {
+          font-size: 14px;
+          font-weight: 700;
+          color: var(--gray-900);
+        }
+        .notif-read-all {
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--blue-600);
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 0;
+        }
+        .notif-read-all:hover { text-decoration: underline; }
+        .notif-dropdown-list {
+          overflow-y: auto;
+          flex: 1;
+        }
+        .notif-empty {
+          padding: 32px;
+          text-align: center;
+          color: var(--gray-400);
+          font-size: 13px;
+        }
+        .notif-item {
+          display: flex;
+          gap: 8px;
+          padding: 10px 16px;
+          border: none;
+          border-bottom: 1px solid var(--gray-50);
+          background: none;
+          width: 100%;
+          cursor: pointer;
+          text-align: left;
+          transition: background 0.1s;
+        }
+        .notif-item:hover { background: var(--gray-50); }
+        .notif-unread { background: var(--blue-50); }
+        .notif-unread:hover { background: var(--blue-100); }
+        .notif-dot-col {
+          width: 8px;
+          padding-top: 6px;
+          flex-shrink: 0;
+        }
+        .notif-dot {
+          display: block;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--blue-500);
+        }
+        .notif-content { flex: 1; min-width: 0; }
+        .notif-item-title {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--gray-900);
+          margin: 0 0 2px;
+        }
+        .notif-item-msg {
+          font-size: 12px;
+          color: var(--gray-500);
+          margin: 0 0 4px;
+          line-height: 1.4;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        .notif-item-time {
+          font-size: 10px;
+          color: var(--gray-400);
+          margin: 0;
         }
       `}</style>
     </div>

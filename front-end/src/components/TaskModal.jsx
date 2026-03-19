@@ -56,17 +56,17 @@ function UserMultiSelect({ users, selected, onChange }) {
         top: coords.top,
         left: coords.left,
         width: coords.width,
-        background: 'white',
-        border: '1px solid #e5e7eb',
+        background: 'var(--white)',
+        border: '1px solid var(--gray-200)',
         borderRadius: 8,
-        boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
+        boxShadow: '0 8px 30px rgba(0,0,0,0.18)',
         zIndex: 99999,
         maxHeight: 220,
         overflowY: 'auto',
       }}
     >
       {users.length === 0 && (
-        <div style={{ padding: '10px 12px', color: '#9ca3af', fontSize: 13 }}>Nenhum usuário disponível</div>
+        <div style={{ padding: '10px 12px', color: 'var(--gray-400)', fontSize: 13 }}>Nenhum usuário disponível</div>
       )}
       {users.map(u => (
         <div
@@ -75,26 +75,27 @@ function UserMultiSelect({ users, selected, onChange }) {
           style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '9px 12px', cursor: 'pointer',
-            background: isSelected(u.id) ? '#f9fafb' : 'white',
+            background: isSelected(u.id) ? 'var(--gray-50)' : 'var(--white)',
           }}
-          onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
-          onMouseLeave={e => e.currentTarget.style.background = isSelected(u.id) ? '#f9fafb' : 'white'}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
+          onMouseLeave={e => e.currentTarget.style.background = isSelected(u.id) ? 'var(--gray-50)' : 'var(--white)'}
         >
           <div style={{
             width: 18, height: 18, borderRadius: 5, border: '1.5px solid',
-            borderColor: isSelected(u.id) ? '#111827' : '#d1d5db',
-            background: isSelected(u.id) ? '#111827' : 'white',
+            borderColor: isSelected(u.id) ? 'var(--gray-900)' : 'var(--gray-300)',
+            background: isSelected(u.id) ? 'var(--gray-900)' : 'var(--white)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           }}>
             {isSelected(u.id) && (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"
+                style={{ color: 'var(--gray-50)' }}>
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
             )}
           </div>
           <div>
-            <p style={{ fontSize: 13, fontWeight: 500, color: '#111827', lineHeight: 1.3 }}>{u.name}</p>
-            <p style={{ fontSize: 11, color: '#9ca3af', lineHeight: 1.3 }}>{u.role}</p>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--gray-900)', lineHeight: 1.3 }}>{u.name}</p>
+            <p style={{ fontSize: 11, color: 'var(--gray-400)', lineHeight: 1.3 }}>{u.role}</p>
           </div>
         </div>
       ))}
@@ -110,12 +111,12 @@ function UserMultiSelect({ users, selected, onChange }) {
         onMouseDown={(e) => { e.preventDefault(); handleOpen(); }}
       >
         {selected.length === 0 && (
-          <span style={{ color: '#9ca3af', fontSize: 13 }}>Selecionar responsáveis...</span>
+          <span style={{ color: 'var(--gray-400)', fontSize: 13 }}>Selecionar responsáveis...</span>
         )}
         {selected.map(u => (
           <span key={u.id} style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
-            background: '#111827', color: 'white',
+            background: 'var(--gray-900)', color: 'var(--gray-50)',
             borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 500,
           }}>
             {u.name}
@@ -126,7 +127,7 @@ function UserMultiSelect({ users, selected, onChange }) {
             >×</button>
           </span>
         ))}
-        <span style={{ marginLeft: 'auto', color: '#9ca3af', flexShrink: 0 }}>
+        <span style={{ marginLeft: 'auto', color: 'var(--gray-400)', flexShrink: 0 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
             style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
             <polyline points="6 9 12 15 18 9"/>
@@ -170,6 +171,7 @@ export default function TaskModal({ task, onClose, onSave }) {
     e.preventDefault();
     if (!form.title.trim()) { setError('O título é obrigatório'); return; }
     if (!form.due_date) { setError('A data de vencimento é obrigatória'); return; }
+    if (!form.assignees || form.assignees.length === 0) { setError('Atribua pelo menos uma pessoa à tarefa'); return; }
     if (!isEdit && new Date(form.due_date) <= new Date()) {
       setError('A data de vencimento deve ser no futuro'); return;
     }
@@ -258,7 +260,7 @@ export default function TaskModal({ task, onClose, onSave }) {
 
             <div className="input-group" style={{ marginBottom: isEdit ? 16 : 0 }}>
               <label className="input-label">
-                Responsáveis
+                Responsáveis *
                 {form.assignees.length > 0 && (
                   <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--gray-400)', fontWeight: 400 }}>
                     {form.assignees.length} selecionado{form.assignees.length > 1 ? 's' : ''}

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../services/api';
 import TaskModal from '../components/TaskModal';
 import { useAuth } from '../contexts/AuthContext';
+import { useDialog } from '../contexts/DialogContext';
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '';
@@ -40,10 +41,10 @@ const formatDevTime = (totalSeconds) => {
 };
 
 const statusConfig = {
-  overdue:   { label: 'Atrasada',  color: '#dc2626', bg: '#fef2f2', border: '#fecaca', dot: '#ef4444' },
-  pending:   { label: 'Pendente',  color: '#d97706', bg: '#fffbeb', border: '#fde68a', dot: '#f59e0b' },
-  paused:    { label: 'Pausada',   color: '#6366f1', bg: '#eef2ff', border: '#c7d2fe', dot: '#818cf8' },
-  completed: { label: 'Concluída', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', dot: '#22c55e' },
+  overdue:   { label: 'Atrasada',  color: 'var(--red-600)',    bg: 'var(--red-50)',    border: 'var(--red-100)',    dot: 'var(--red-500)'    },
+  pending:   { label: 'Pendente',  color: 'var(--amber-600)',  bg: 'var(--amber-50)',  border: 'var(--amber-100)', dot: 'var(--amber-500)'  },
+  paused:    { label: 'Pausada',   color: 'var(--indigo-500)', bg: 'var(--indigo-50)', border: 'var(--indigo-100)',dot: 'var(--indigo-500)' },
+  completed: { label: 'Concluída', color: 'var(--green-600)',  bg: 'var(--green-50)',  border: 'var(--green-100)', dot: 'var(--green-500)'  },
 };
 
 const priorityConfig = {
@@ -65,10 +66,15 @@ function StatCard({ label, value, icon, color, bg }) {
   );
 }
 
-function TaskCard({ task, onEdit, onComplete, onDelete, onPause, onResume, onSendToBonificacao, readonly }) {
+function TaskCard({ task, onEdit, onComplete, onDelete, onPause, onResume, onSendToBonificacao, readonly, currentUserId }) {
   const cfg = statusConfig[task.status] || statusConfig.pending;
   const pCfg = priorityConfig[task.priority] || priorityConfig.medium;
-  const isRunning = task.status === 'pending' && task.timer_started_at;
+  const isAssigned = task.assignees?.some(a => a.id === currentUserId);
+  const myTimerActive = !!task.my_timer_started_at;
+  const anyoneActive = task.assignees?.some(a => a.timer_active);
+  const canPause = isAssigned && myTimerActive && task.status !== 'completed';
+  const canResume = isAssigned && !myTimerActive && task.status !== 'completed';
+  const canComplete = isAssigned && task.status !== 'completed';
 
   return (
     <div className="task-card" style={{ '--card-border': cfg.border, '--card-bg': cfg.bg }}>
@@ -101,7 +107,6 @@ function TaskCard({ task, onEdit, onComplete, onDelete, onPause, onResume, onSen
         )}
       </div>
 
-      {/* Dev time display */}
       <div className="task-dev-time">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
@@ -109,8 +114,25 @@ function TaskCard({ task, onEdit, onComplete, onDelete, onPause, onResume, onSen
         <span className="task-dev-time-value">
           {formatDevTime(task.current_dev_seconds || 0)}
         </span>
-        {isRunning && <span className="task-timer-badge">em andamento</span>}
+        {myTimerActive && <span className="task-timer-badge">seu timer ativo</span>}
+        {!myTimerActive && anyoneActive && <span className="task-timer-badge other-active">outros ativos</span>}
       </div>
+
+      {/* Assignee badges showing who is active */}
+      {task.assignees && task.assignees.length > 0 && (
+        <div className="task-assignees-row">
+          {task.assignees.map(u => (
+            <span
+              key={u.id}
+              className={`task-assignee-chip${u.timer_active ? ' active' : ''}`}
+              title={`${u.name} — ${u.timer_active ? 'timer ativo' : 'pausado'} (${formatDevTime(u.user_dev_seconds || 0)})`}
+            >
+              <span className="assignee-dot" />
+              {u.name.split(' ')[0]}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="task-card-footer">
         <div className="task-tags">
@@ -122,38 +144,24 @@ function TaskCard({ task, onEdit, onComplete, onDelete, onPause, onResume, onSen
           <span className="task-tag" style={{ color: pCfg.color, background: `${pCfg.color}12`, borderColor: `${pCfg.color}25` }}>
             {pCfg.label}
           </span>
-          {task.assignees && task.assignees.length > 0 && (
-            task.assignees.slice(0, 2).map(u => (
-              <span key={u.id} className="task-tag gray">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                  <circle cx="12" cy="7" r="4"/>
-                </svg>
-                {u.name.split(' ')[0]}
-              </span>
-            ))
-          )}
-          {task.assignees && task.assignees.length > 2 && (
-            <span className="task-tag gray">+{task.assignees.length - 2}</span>
-          )}
         </div>
         {!readonly && (
           <div className="task-actions">
-            {task.status === 'pending' && (
-              <button className="task-action-btn pause-btn" title="Pausar" onClick={() => onPause(task.id)}>
+            {canPause && (
+              <button className="task-action-btn pause-btn" title="Pausar seu timer" onClick={() => onPause(task.id)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>
                 </svg>
               </button>
             )}
-            {task.status === 'paused' && (
-              <button className="task-action-btn play-btn" title="Retomar" onClick={() => onResume(task.id)}>
+            {canResume && (
+              <button className="task-action-btn play-btn" title="Retomar seu timer" onClick={() => onResume(task.id)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <polygon points="5 3 19 12 5 21 5 3"/>
                 </svg>
               </button>
             )}
-            {task.status !== 'completed' && (
+            {canComplete && (
               <button className="task-action-btn green" title="Concluir" onClick={() => onComplete(task.id)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <polyline points="20 6 9 17 4 12"/>
@@ -161,7 +169,12 @@ function TaskCard({ task, onEdit, onComplete, onDelete, onPause, onResume, onSen
               </button>
             )}
             {task.status === 'completed' && (
-              <button className="task-action-btn bonif-btn" title="Enviar para bonificação" onClick={() => onSendToBonificacao(task.id)}>
+              <button
+                className={`task-action-btn bonif-btn${task.has_bonif_project ? ' bonif-sent' : ''}`}
+                title={task.has_bonif_project ? 'Já enviada para bonificação' : 'Enviar para bonificação'}
+                onClick={() => !task.has_bonif_project && onSendToBonificacao(task.id)}
+                disabled={!!task.has_bonif_project}
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="12" y1="1" x2="12" y2="23"/>
                   <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
@@ -188,7 +201,8 @@ function TaskCard({ task, onEdit, onComplete, onDelete, onPause, onResume, onSen
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const readonly = user?.role === 'gestor';
+  const { confirm, alert } = useDialog();
+  const readonly = ['gestor', 'rh'].includes(user?.role);
 
   const [tasks, setTasks] = useState([]);
   const [stats, setStats] = useState(null);
@@ -216,17 +230,13 @@ export default function Dashboard() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Atualiza dados do servidor a cada 30s para manter tempos precisos
   useEffect(() => {
-    timerRef.current = setInterval(() => {
-      setTasks(prev => prev.map(t => {
-        if (t.status === 'pending' && t.timer_started_at) {
-          return { ...t, current_dev_seconds: (t.current_dev_seconds || 0) + 60 };
-        }
-        return t;
-      }));
-    }, 60000);
+    const hasRunning = tasks.some(t => t.status === 'pending' && t.assignees?.some(a => a.timer_active));
+    if (!hasRunning) return;
+    timerRef.current = setInterval(() => { fetchData(); }, 30000);
     return () => clearInterval(timerRef.current);
-  }, []);
+  }, [tasks, fetchData]);
 
   const handlePause = async (id) => {
     try {
@@ -256,7 +266,12 @@ export default function Dashboard() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Remover esta tarefa?')) return;
+    const ok = await confirm('Deseja remover esta tarefa permanentemente?', {
+      title: 'Remover Tarefa',
+      variant: 'danger',
+      confirmLabel: 'Remover',
+    });
+    if (!ok) return;
     try {
       await api.delete(`/tasks/${id}`);
       fetchData();
@@ -269,10 +284,13 @@ export default function Dashboard() {
     try {
       await api.post(`/projects/from-task/${id}`);
       fetchData();
-      alert('Tarefa enviada para bonificação!');
+      await alert('Tarefa enviada para bonificação com sucesso!', {
+        title: 'Sucesso!',
+        variant: 'success',
+      });
     } catch (err) {
       const msg = err.response?.data?.error || 'Erro ao enviar para bonificação';
-      alert(msg);
+      await alert(msg, { title: 'Erro', variant: 'error' });
     }
   };
 
@@ -296,7 +314,8 @@ export default function Dashboard() {
     fetchData();
   };
 
-  const filteredTasks = filter === 'all' ? tasks : tasks.filter(t => t.status === filter);
+  const nonCompletedTasks = tasks.filter(t => t.status !== 'completed');
+  const filteredTasks = filter === 'all' ? nonCompletedTasks : tasks.filter(t => t.status === filter);
 
   const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -331,8 +350,8 @@ export default function Dashboard() {
         <StatCard
           label="Total"
           value={stats?.total}
-          color="#2563eb"
-          bg="#eff6ff"
+          color="var(--blue-600)"
+          bg="var(--blue-50)"
           icon={
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
@@ -342,8 +361,8 @@ export default function Dashboard() {
         <StatCard
           label="Concluídas"
           value={stats?.completed}
-          color="#16a34a"
-          bg="#f0fdf4"
+          color="var(--green-600)"
+          bg="var(--green-50)"
           icon={
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10"/>
@@ -354,8 +373,8 @@ export default function Dashboard() {
         <StatCard
           label="Pendentes"
           value={stats?.pending}
-          color="#d97706"
-          bg="#fffbeb"
+          color="var(--amber-600)"
+          bg="var(--amber-50)"
           icon={
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10"/>
@@ -366,8 +385,8 @@ export default function Dashboard() {
         <StatCard
           label="Pausadas"
           value={stats?.paused}
-          color="#6366f1"
-          bg="#eef2ff"
+          color="var(--indigo-500)"
+          bg="var(--indigo-50)"
           icon={
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>
@@ -377,8 +396,8 @@ export default function Dashboard() {
         <StatCard
           label="Atrasadas"
           value={stats?.overdue}
-          color="#dc2626"
-          bg="#fef2f2"
+          color="var(--red-600)"
+          bg="var(--red-50)"
           icon={
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
@@ -407,7 +426,7 @@ export default function Dashboard() {
               >
                 {f.label}
                 <span className="filter-tab-count">
-                  {f.key === 'all' ? tasks.length : tasks.filter(t => t.status === f.key).length}
+                  {f.key === 'all' ? nonCompletedTasks.length : tasks.filter(t => t.status === f.key).length}
                 </span>
               </button>
             ))}
@@ -440,6 +459,7 @@ export default function Dashboard() {
                 onResume={handleResume}
                 onSendToBonificacao={handleSendToBonificacao}
                 readonly={readonly}
+                currentUserId={user?.id}
               />
             ))}
           </div>
@@ -673,16 +693,54 @@ export default function Dashboard() {
         .task-timer-badge {
           font-size: 10px;
           font-weight: 600;
-          color: #16a34a;
-          background: #f0fdf4;
-          border: 1px solid #bbf7d0;
+          color: var(--green-600);
+          background: var(--green-50);
+          border: 1px solid var(--green-100);
           padding: 1px 6px;
           border-radius: 10px;
           animation: pulse-badge 2s ease-in-out infinite;
         }
+        .task-timer-badge.other-active {
+          color: var(--amber-600);
+          background: var(--amber-50);
+          border-color: var(--amber-100);
+        }
         @keyframes pulse-badge {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
+        }
+        .task-assignees-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
+        }
+        .task-assignee-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 2px 8px;
+          border-radius: 20px;
+          font-size: 11px;
+          font-weight: 500;
+          background: var(--gray-100);
+          color: var(--gray-500);
+          border: 1px solid var(--gray-200);
+        }
+        .task-assignee-chip.active {
+          background: var(--green-50);
+          color: var(--green-700);
+          border-color: var(--green-200);
+        }
+        .task-assignee-chip .assignee-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: var(--gray-400);
+          flex-shrink: 0;
+        }
+        .task-assignee-chip.active .assignee-dot {
+          background: var(--green-500);
+          animation: pulse-badge 2s ease-in-out infinite;
         }
         .task-card-footer {
           display: flex;
@@ -736,34 +794,49 @@ export default function Dashboard() {
           border-color: var(--gray-300);
         }
         .task-action-btn.green:hover {
-          background: #f0fdf4;
-          color: #16a34a;
-          border-color: #bbf7d0;
+          background: var(--green-50);
+          color: var(--green-600);
+          border-color: var(--green-100);
         }
         .task-action-btn.red:hover {
-          background: #fef2f2;
-          color: #dc2626;
-          border-color: #fecaca;
+          background: var(--red-50);
+          color: var(--red-600);
+          border-color: var(--red-100);
         }
         .task-action-btn.pause-btn:hover {
-          background: #eef2ff;
-          color: #6366f1;
-          border-color: #c7d2fe;
+          background: var(--indigo-50);
+          color: var(--indigo-500);
+          border-color: var(--indigo-100);
         }
         .task-action-btn.play-btn {
-          background: #eef2ff;
-          color: #6366f1;
-          border-color: #c7d2fe;
+          background: var(--indigo-50);
+          color: var(--indigo-500);
+          border-color: var(--indigo-100);
         }
         .task-action-btn.play-btn:hover {
-          background: #e0e7ff;
-          color: #4f46e5;
-          border-color: #a5b4fc;
+          background: var(--indigo-100);
+          color: var(--indigo-600);
+          border-color: var(--indigo-500);
         }
         .task-action-btn.bonif-btn:hover {
-          background: #fffbeb;
-          color: #d97706;
-          border-color: #fde68a;
+          background: var(--amber-50);
+          color: var(--amber-600);
+          border-color: var(--amber-100);
+        }
+        .task-action-btn.bonif-sent {
+          background: var(--green-500);
+          color: #fff;
+          border-color: var(--green-500);
+          cursor: default;
+          opacity: 1;
+        }
+        .task-action-btn.bonif-sent:hover {
+          background: var(--green-500);
+          color: #fff;
+          border-color: var(--green-500);
+        }
+        .task-action-btn:disabled {
+          pointer-events: none;
         }
         @media (max-width: 1100px) {
           .stats-grid, .stats-5 { grid-template-columns: repeat(2, 1fr); }

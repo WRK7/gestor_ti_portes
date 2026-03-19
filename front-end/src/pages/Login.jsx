@@ -178,12 +178,16 @@ export default function Login() {
         }
         .login-left {
           flex: 1;
-          background: var(--gray-900);
+          background: #111827;
           padding: 48px;
           display: flex;
           flex-direction: column;
           justify-content: space-between;
           min-height: 100vh;
+        }
+        [data-theme="dark"] .login-left {
+          background: #0d1117;
+          border-right: 1px solid #30363d;
         }
         .login-brand {
           display: flex;
@@ -193,7 +197,7 @@ export default function Login() {
         .login-brand-name {
           font-size: 16px;
           font-weight: 600;
-          color: var(--white);
+          color: #f9fafb;
         }
         .login-hero {
           flex: 1;
@@ -205,14 +209,14 @@ export default function Login() {
         .login-hero-title {
           font-size: 36px;
           font-weight: 700;
-          color: var(--white);
+          color: #f9fafb;
           line-height: 1.2;
           margin-bottom: 16px;
           letter-spacing: -0.5px;
         }
         .login-hero-sub {
           font-size: 16px;
-          color: var(--gray-400);
+          color: #9ca3af;
           line-height: 1.6;
         }
         .login-features {
@@ -240,11 +244,11 @@ export default function Login() {
         .login-feature-title {
           font-size: 13px;
           font-weight: 500;
-          color: var(--white);
+          color: #f9fafb;
         }
         .login-feature-desc {
           font-size: 12px;
-          color: var(--gray-500);
+          color: #9ca3af;
           margin-top: 1px;
         }
         .login-right {

@@ -38,7 +38,3 @@ INSERT IGNORE INTO task_categories_ti (name, color) VALUES
   ('Documentação', '#6B7280');
 
 ALTER TABLE tasks_ti MODIFY COLUMN status ENUM('pending', 'paused', 'completed', 'overdue') DEFAULT 'pending';
-
-ALTER TABLE tasks_ti ADD COLUMN dev_seconds INT DEFAULT 0;
-
-ALTER TABLE tasks_ti ADD COLUMN timer_started_at DATETIME NULL;

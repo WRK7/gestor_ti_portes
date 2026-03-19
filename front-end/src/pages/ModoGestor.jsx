@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
 /* ─── helpers ───────────────────────────────────────────────────── */
@@ -19,8 +20,19 @@ const formatDeadline = (d) => {
   });
 };
 
+const fmtMoney = (v) => v == null ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) : '—';
+
 const PRIORITY_LABEL = { low: 'Baixa', medium: 'Média', high: 'Alta', critical: 'Crítica' };
 const PRIORITY_COLOR = { low: '#6366f1', medium: '#f59e0b', high: '#f97316', critical: '#ef4444' };
+
+const BONIF_STATUS = {
+  awaiting: { label: 'Aguardando parâmetros', color: 'var(--amber-600)', bg: 'var(--amber-50)', border: 'var(--amber-200)' },
+  pending:  { label: 'Pronto p/ aprovar',     color: 'var(--blue-600)',  bg: 'var(--blue-50)',  border: 'var(--blue-200)'  },
+  approved: { label: 'Bonificado',            color: 'var(--green-600)', bg: 'var(--green-50)', border: 'var(--green-200)' },
+};
+
+const DIFF_LABEL = { baixa: 'Baixa', media: 'Média', alta: 'Alta', critica: 'Crítica' };
 
 /* ─── sub-components ────────────────────────────────────────────── */
 function UserAvatar({ name, username }) {
@@ -127,6 +139,45 @@ function ManagerTaskCard({ task, accentColor, isOverdue }) {
   );
 }
 
+/* ─── bonif project card ────────────────────────────────────────── */
+function BonifProjectCard({ project, statusKey }) {
+  const st = BONIF_STATUS[statusKey];
+  const val = project.approved_value ?? project.suggested_value;
+  return (
+    <div className="bonif-card" style={{ '--bonif-border': st.border }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: st.color, background: st.bg, border: `1px solid ${st.border}`, borderRadius: 20, padding: '2px 8px' }}>
+          {st.label}
+        </span>
+        {val != null && <span style={{ fontSize: 13, fontWeight: 700, color: statusKey === 'approved' ? 'var(--green-600)' : 'var(--gray-700)' }}>{fmtMoney(val)}</span>}
+      </div>
+      <div className="task-title" style={{ marginBottom: 4 }}>{project.name}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {project.resp_name && (
+          <span style={{ fontSize: 11, color: 'var(--gray-500)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            {project.resp_name}
+          </span>
+        )}
+        {project.difficulty && (
+          <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-500)', background: 'var(--gray-100)', borderRadius: 6, padding: '1px 6px' }}>
+            {DIFF_LABEL[project.difficulty]}
+          </span>
+        )}
+        {project.dev_seconds > 0 && (
+          <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>⏱ {formatDevTime(project.dev_seconds)}</span>
+        )}
+        {statusKey === 'approved' && project.bonificado_at && (
+          <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>
+            {fmtDate(project.bonificado_at)}
+            {project.approved_by_name && ` · ${project.approved_by_name}`}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── stat card (igual ao Dashboard) ───────────────────────────── */
 function StatCard({ label, value, color, bg, icon }) {
   return (
@@ -148,12 +199,20 @@ const TABS = [
   { key: 'completed', label: 'Concluídas', color: '#6366f1', emptyMsg: 'Nenhuma tarefa concluída' },
 ];
 
+const BONIF_TABS = [
+  { key: 'bonif_awaiting', label: 'Aguardando', statusKey: 'awaiting', emptyMsg: 'Nenhum projeto aguardando parâmetros' },
+  { key: 'bonif_pending',  label: 'Prontos p/ aprovar', statusKey: 'pending',  emptyMsg: 'Nenhum projeto pronto para aprovar' },
+  { key: 'bonif_approved', label: 'Bonificados', statusKey: 'approved', emptyMsg: 'Nenhuma bonificação aprovada' },
+];
+
 /* ─── page ──────────────────────────────────────────────────────── */
 export default function ModoGestor() {
+  const navigate = useNavigate();
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(true);
   const [lastRefresh, setLast]  = useState(null);
   const [activeTab, setTab]     = useState('pending');
+  const [bonifTab, setBonifTab] = useState('bonif_awaiting');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -248,8 +307,28 @@ export default function ModoGestor() {
           padding: 60px 20px; color: var(--gray-300);
         }
         .empty-state p { font-size: 14px; color: var(--gray-400); margin: 0; }
-        @media (max-width: 1100px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
-        @media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr; } .tasks-grid { grid-template-columns: 1fr; } .dashboard { padding: 20px 16px; } }
+
+        .gestor-divider {
+          height: 1px;
+          background: var(--gray-200);
+          margin: 32px 0 24px;
+        }
+
+        .bonif-card {
+          background: var(--white);
+          border-radius: var(--radius-lg);
+          border: 1px solid var(--bonif-border, var(--gray-200));
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          box-shadow: var(--shadow-sm);
+          transition: box-shadow var(--transition), transform var(--transition);
+        }
+        .bonif-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+
+        @media (max-width: 1100px) { .stats-grid { grid-template-columns: repeat(2, 1fr) !important; } }
+        @media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr !important; } .tasks-grid { grid-template-columns: 1fr; } .dashboard { padding: 20px 16px; } }
       `}</style>
 
       {/* ── header ── */}
@@ -345,6 +424,78 @@ export default function ModoGestor() {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* ═══ BONIFICAÇÃO ═══ */}
+          <div className="gestor-divider" />
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-900)', margin: '0 0 2px' }}>Bonificações</h2>
+              <p style={{ fontSize: 12, color: 'var(--gray-400)', margin: 0 }}>Projetos de bonificação do time</p>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={() => navigate('/bonificacao')}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+              </svg>
+              Ir para Bonificação
+            </button>
+          </div>
+
+          {/* bonif stat cards */}
+          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 20 }}>
+            <StatCard
+              label="Aguardando parâmetros" value={data.bonif_awaiting?.length ?? 0}
+              color="#d97706" bg="#fffbeb"
+              icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
+            />
+            <StatCard
+              label="Prontos p/ aprovar" value={data.bonif_pending?.length ?? 0}
+              color="#2563eb" bg="#eff6ff"
+              icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>}
+            />
+            <StatCard
+              label="Bonificados" value={data.bonif_approved?.length ?? 0}
+              color="#16a34a" bg="#f0fdf4"
+              icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>}
+            />
+          </div>
+
+          {/* bonif tabs + list */}
+          <div className="tasks-section">
+            <div className="tasks-header">
+              <div className="filter-tabs">
+                {BONIF_TABS.map(t => (
+                  <button
+                    key={t.key}
+                    className={`filter-tab${bonifTab === t.key ? ' active' : ''}`}
+                    onClick={() => setBonifTab(t.key)}
+                  >
+                    {t.label}
+                    <span className="filter-tab-count">{data[t.key]?.length ?? 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {(() => {
+              const bt = BONIF_TABS.find(t => t.key === bonifTab);
+              const items = data[bonifTab] ?? [];
+              return items.length === 0 ? (
+                <div className="empty-state">
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                  </svg>
+                  <p>{bt?.emptyMsg}</p>
+                </div>
+              ) : (
+                <div className="tasks-grid">
+                  {items.map(p => (
+                    <BonifProjectCard key={p.id} project={p} statusKey={bt?.statusKey} />
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </>
       )}

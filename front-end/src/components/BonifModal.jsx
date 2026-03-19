@@ -6,6 +6,22 @@ const fmtMoney = (v) => {
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
+const fmtHours = (secs) => {
+  if (!secs || secs <= 0) return null;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (h === 0) return `${m}min`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}min`;
+};
+
+const DIFFICULTY_CONFIG = {
+  baixa:   { label: 'Baixa',   mult: 1.0, color: 'var(--green-600)', bg: 'var(--green-50)',  border: 'var(--green-200)' },
+  media:   { label: 'Média',   mult: 1.5, color: 'var(--blue-600)',  bg: 'var(--blue-50)',   border: 'var(--blue-200)'  },
+  alta:    { label: 'Alta',    mult: 2.0, color: 'var(--amber-600)', bg: 'var(--amber-50)',  border: 'var(--amber-200)' },
+  critica: { label: 'Crítica', mult: 3.0, color: 'var(--red-600)',   bg: 'var(--red-50)',    border: 'var(--red-200)'   },
+};
+
 export default function BonifModal({ project, onClose, onConfirm }) {
   const [mode, setMode]   = useState(null); // null | 'accept' | 'custom'
   const [value, setValue] = useState('');
@@ -41,7 +57,6 @@ export default function BonifModal({ project, onClose, onConfirm }) {
   return createPortal(
     <div
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div style={{
         background: 'var(--white)', borderRadius: 16, width: 460, maxWidth: '95vw',
@@ -67,10 +82,57 @@ export default function BonifModal({ project, onClose, onConfirm }) {
 
         {/* suggested value info */}
         <div style={{ background: 'var(--gray-50)', border: '1px solid var(--gray-200)', borderRadius: 10, padding: '14px 16px', marginBottom: 20 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
             Valor sugerido pelo time
           </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: project.suggested_value ? '#16a34a' : 'var(--gray-400)' }}>
+
+          {/* billing calculation row */}
+          {project.hourly_rate && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+              {/* taxa + horas + dificuldade em linha */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, background: 'var(--blue-50)', color: 'var(--blue-600)', border: '1px solid var(--blue-100)', borderRadius: 6, padding: '2px 8px' }}>
+                  {fmtMoney(project.hourly_rate)}/h
+                </span>
+
+                {project.dev_seconds > 0 && (
+                  <>
+                    <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>×</span>
+                    <span style={{ fontSize: 12, color: 'var(--gray-600)' }}>
+                      {fmtHours(project.dev_seconds)}
+                    </span>
+                  </>
+                )}
+
+                {project.difficulty && DIFFICULTY_CONFIG[project.difficulty] && (() => {
+                  const d = DIFFICULTY_CONFIG[project.difficulty];
+                  return (
+                    <>
+                      <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>×</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, background: d.bg, color: d.color, border: `1px solid ${d.border}`, borderRadius: 6, padding: '2px 8px' }}>
+                        {d.label} ×{d.mult}
+                      </span>
+                    </>
+                  );
+                })()}
+
+                {project.dev_seconds > 0 && (
+                  <>
+                    <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>=</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue-600)' }}>
+                      {fmtMoney(
+                        (project.dev_seconds / 3600) *
+                        project.hourly_rate *
+                        (DIFFICULTY_CONFIG[project.difficulty]?.mult ?? 1)
+                      )}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div style={{ fontSize: 22, fontWeight: 700, color: project.suggested_value ? 'var(--green-600)' : 'var(--gray-400)' }}>
             {fmtMoney(project.suggested_value)}
           </div>
           {project.financial_return && (
@@ -86,8 +148,8 @@ export default function BonifModal({ project, onClose, onConfirm }) {
             <button
               onClick={() => setMode('accept')}
               style={{
-                padding: '14px 16px', borderRadius: 10, border: '1px solid #bbf7d0',
-                background: '#f0fdf4', color: '#16a34a', fontWeight: 600, fontSize: 14,
+                padding: '14px 16px', borderRadius: 10, border: '1px solid var(--green-100)',
+                background: 'var(--green-50)', color: 'var(--green-600)', fontWeight: 600, fontSize: 14,
                 cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10,
               }}
             >
@@ -98,8 +160,8 @@ export default function BonifModal({ project, onClose, onConfirm }) {
             <button
               onClick={() => setMode('custom')}
               style={{
-                padding: '14px 16px', borderRadius: 10, border: '1px solid #bfdbfe',
-                background: '#eff6ff', color: '#2563eb', fontWeight: 600, fontSize: 14,
+                padding: '14px 16px', borderRadius: 10, border: '1px solid var(--blue-100)',
+                background: 'var(--blue-50)', color: 'var(--blue-600)', fontWeight: 600, fontSize: 14,
                 cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10,
               }}
             >
@@ -123,7 +185,7 @@ export default function BonifModal({ project, onClose, onConfirm }) {
                 autoFocus
               />
             </div>
-            {error && <div style={{ fontSize: 13, color: '#ef4444' }}>{error}</div>}
+            {error && <div style={{ fontSize: 13, color: 'var(--red-500)' }}>{error}</div>}
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-secondary btn-sm" onClick={() => { setMode(null); setError(''); }}>Voltar</button>
               <button className="btn btn-primary" onClick={handleConfirm} disabled={loading} style={{ flex: 1 }}>
@@ -136,7 +198,7 @@ export default function BonifModal({ project, onClose, onConfirm }) {
         {/* accept confirm */}
         {mode === 'accept' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {error && <div style={{ fontSize: 13, color: '#ef4444' }}>{error}</div>}
+            {error && <div style={{ fontSize: 13, color: 'var(--red-500)' }}>{error}</div>}
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-secondary btn-sm" onClick={() => { setMode(null); setError(''); }}>Voltar</button>
               <button className="btn btn-primary" onClick={handleConfirm} disabled={loading} style={{ flex: 1 }}>
