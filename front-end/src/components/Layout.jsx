@@ -59,16 +59,50 @@ function requestNativeNotifPermission() {
   }
 }
 
-function showNativeNotification(title, body) {
-  if (!('Notification' in window)) return;
-  if (Notification.permission !== 'granted') return;
-  if (document.hasFocus()) return;
+const NOTIF_SOUND_URL = 'data:audio/wav;base64,UklGRl4FAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YToFAACAgICAgICAgICAgICAgICAgICAgICAgICA' +
+  'f3h0cXBvcHJ1eX+Fi5CUlpeXlpKOiIN+eXVyb29wc3d8goiNkZSWl5eWko6Ig3x3c3Bvb3F1eoGHjJGVl5iX' +
+  'lZGMhn95dHBub3Byd3yChoyRlZeYl5WRjIaDfXh0cXBvcHN3fIKHjJCUlpeXlZKOiYR+eXVycHBxdHl+g4iM' +
+  'kJOWl5eVko6JhH55dXJwcHF0eX6DiIyQk5aXl5WSjoqFgHt3c3FwcXR4fYKHi4+Sk5aWlpSSjomFgHt3dHFw' +
+  'cXR4fYKHi4+SlZaWlZKOiYWAfHh0cnBxdHh9goaLj5KVlpaVko+KhYF8eHRycXF0eH2ChoqOkpWWlpWTj4qG' +
+  'gXx4dHJxcXR4fIGGio6SlJWWlpOPi4aBfXl1cnFxdHh8gYaKjpGUlZaVk4+LhoJ9eXVzcXF0eHyBhoqOkZSV' +
+  'lpWTj4uGgn15dXNxcnR4fIGFiY2RlJWVlZOQi4eCfnp2c3FydHh8gYWJjZCTlZWVk5CLh4J+enZ0cnJ0eHuA' +
+  'hYmNkJOUlZWTkIuHg356d3RycnR3e4CFiY2QkpSVlJOQjIiDf3t3dHJydHd7gIWJjI+Sk5SUk5CMiIN/e3d0' +
+  'c3J0d3uAhIiMj5KTlJSTkIyIhIB8eHV0c3R3e3+EiIuOkZOUlJOQjIiEgHx4dXRzdHd7f4SHi46RkpOUk5CM' +
+  'iISAfHl2dHN0d3p/g4eLjo+Sk5OTkY2JhYF9eXZ0dHR3en+DhwuOj5GTk5ORjYmFgX16d3V0dHd6fv8=';
+
+let _notifAudio = null;
+function getNotifAudio() {
+  if (!_notifAudio) {
+    _notifAudio = new Audio(NOTIF_SOUND_URL);
+    _notifAudio.volume = 0.5;
+  }
+  return _notifAudio;
+}
+
+function playNotifSound() {
   try {
-    new Notification(title, {
+    const a = getNotifAudio();
+    a.currentTime = 0;
+    a.play().catch(() => {});
+  } catch (_) {}
+}
+
+function showNativeNotification(title, body) {
+  playNotifSound();
+
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification(title, {
       body,
       icon: ORIGINAL_FAVICON,
-      tag: 'gestor-ti-notif',
+      tag: `gestor-ti-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      requireInteraction: true,
+      silent: false,
     });
+    n.onclick = () => {
+      window.focus();
+      n.close();
+    };
   } catch (_) { /* mobile / insecure context */ }
 }
 
@@ -166,8 +200,7 @@ export default function Layout() {
           setNotifs(fresh);
           const newOnes = fresh.filter(n => !n.is_read && n.id > lastSeenIdRef.current);
           if (newOnes.length && lastSeenIdRef.current > 0) {
-            const latest = newOnes[0];
-            showNativeNotification(latest.title, latest.message);
+            newOnes.forEach(n => showNativeNotification(n.title, n.message));
           }
           if (fresh.length) lastSeenIdRef.current = Math.max(...fresh.map(n => n.id));
         }).catch(() => {});

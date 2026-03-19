@@ -199,7 +199,8 @@ export default function Bonificacao() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [filter, setFilter] = useState(isGestor ? 'pending' : 'awaiting');
+  // Sempre começar em "Aguardando" — gestor/superadmin também precisam ver projetos que ainda não têm parâmetros
+  const [filter, setFilter] = useState('awaiting');
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   // bonif approval modal
@@ -273,7 +274,7 @@ export default function Bonificacao() {
   })();
 
   const filters = [
-    ...(!isGestor ? [{ key: 'awaiting', label: 'Aguardando Parâmetros' }] : []),
+    { key: 'awaiting', label: 'Aguardando Parâmetros' },
     { key: 'pending',    label: 'Pendentes' },
     { key: 'bonificado', label: 'Bonificados' },
   ];
