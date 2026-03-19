@@ -141,6 +141,7 @@ function DialogBox({ dialog, onConfirm, onCancel }) {
 export const DialogProvider = ({ children }) => {
   const [dialog, setDialog] = useState(null);
 
+  /** opts.closeOnBackdropClick === true permite fechar ao clicar no fundo escuro (padrão: não fecha) */
   const confirm = useCallback((message, opts = {}) =>
     new Promise((resolve) => setDialog({ type: 'confirm', message, resolve, ...opts })),
   []);
@@ -154,18 +155,27 @@ export const DialogProvider = ({ children }) => {
     setDialog(null);
   };
 
+  const handleBackdropMouseDown = (e) => {
+    if (e.target !== e.currentTarget) return;
+    if (dialog?.closeOnBackdropClick) handleResult(false);
+  };
+
   return (
     <DialogContext.Provider value={{ confirm, alert }}>
       {children}
       {dialog && createPortal(
-        <div style={{
-          position: 'fixed', inset: 0,
-          background: 'rgba(0,0,0,0.45)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 99999, padding: 20,
-          animation: 'fadeIn 0.15s ease',
-        }}>
+        <div
+          role="presentation"
+          onMouseDown={handleBackdropMouseDown}
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.45)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 99999, padding: 20,
+            animation: 'fadeIn 0.15s ease',
+          }}
+        >
           <DialogBox
             dialog={dialog}
             onConfirm={() => handleResult(true)}

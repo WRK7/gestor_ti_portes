@@ -69,6 +69,20 @@ const markAllAsRead = async (req, res) => {
   }
 };
 
+/** Remove do banco apenas notificações já lidas (limpa a lista visual) */
+const clearReadNotifications = async (req, res) => {
+  try {
+    const [result] = await pool.query(
+      `DELETE FROM notifications_ti WHERE user_id = ? AND is_read = 1`,
+      [req.user.id]
+    );
+    return res.json({ success: true, deleted: result.affectedRows ?? 0 });
+  } catch (err) {
+    console.error('Erro ao limpar notificações lidas:', err);
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+};
+
 const notify = async (userId, type, title, message, link = null) => {
   try {
     await pool.query(
@@ -96,6 +110,7 @@ module.exports = {
   getUnreadCount,
   markAsRead,
   markAllAsRead,
+  clearReadNotifications,
   notify,
   notifyMultiple,
 };

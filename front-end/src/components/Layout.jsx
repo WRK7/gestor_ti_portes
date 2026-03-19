@@ -1,5 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useDialog } from '../contexts/DialogContext';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../services/api';
 
@@ -179,6 +180,7 @@ const isManagerRole = (role) => ['gestor', 'admin', 'superadmin'].includes(role)
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { confirm } = useDialog();
   const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [notifs, setNotifs] = useState([]);
@@ -257,6 +259,25 @@ export default function Layout() {
     setUnreadCount(0);
   };
 
+  const hasReadNotifs = notifs.some(n => Number(n.is_read) === 1);
+
+  const handleClearRead = async () => {
+    if (!hasReadNotifs) return;
+    const ok = await confirm(
+      'Remover da lista todas as notificações já visualizadas? As não lidas permanecem.',
+      {
+        title: 'Limpar notificações',
+        variant: 'warning',
+        confirmLabel: 'Remover',
+      }
+    );
+    if (!ok) return;
+    try {
+      await api.delete('/notifications/read');
+      setNotifs(p => p.filter(n => Number(n.is_read) !== 1));
+    } catch (_) { /* silencioso */ }
+  };
+
   const handleNotifClick = (notif) => {
     if (!notif.is_read) handleMarkRead(notif.id);
     if (notif.link) navigate(notif.link);
@@ -320,9 +341,14 @@ export default function Layout() {
             <div className="notif-dropdown">
               <div className="notif-dropdown-header">
                 <span className="notif-dropdown-title">Notificações</span>
-                {unreadCount > 0 && (
-                  <button className="notif-read-all" onClick={handleMarkAllRead}>Marcar todas como lidas</button>
-                )}
+                <div className="notif-dropdown-actions">
+                  {unreadCount > 0 && (
+                    <button type="button" className="notif-read-all" onClick={handleMarkAllRead}>Marcar todas como lidas</button>
+                  )}
+                  {hasReadNotifs && (
+                    <button type="button" className="notif-clear-read" onClick={handleClearRead}>Limpar visualizadas</button>
+                  )}
+                </div>
               </div>
               <div className="notif-dropdown-list">
                 {notifs.length === 0 ? (
@@ -579,8 +605,10 @@ export default function Layout() {
         }
         .notif-dropdown-header {
           display: flex;
+          flex-wrap: wrap;
           align-items: center;
           justify-content: space-between;
+          gap: 8px 12px;
           padding: 12px 16px;
           border-bottom: 1px solid var(--gray-100);
         }
@@ -588,6 +616,15 @@ export default function Layout() {
           font-size: 14px;
           font-weight: 700;
           color: var(--gray-900);
+          flex: 1 1 auto;
+          min-width: 0;
+        }
+        .notif-dropdown-actions {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px 12px;
         }
         .notif-read-all {
           font-size: 11px;
@@ -599,6 +636,19 @@ export default function Layout() {
           padding: 0;
         }
         .notif-read-all:hover { text-decoration: underline; }
+        .notif-clear-read {
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--gray-500);
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 0;
+        }
+        .notif-clear-read:hover {
+          color: var(--red-600);
+          text-decoration: underline;
+        }
         .notif-dropdown-list {
           overflow-y: auto;
           flex: 1;

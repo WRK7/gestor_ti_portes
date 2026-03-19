@@ -6,13 +6,15 @@ const {
   getUnreadCount,
   markAsRead,
   markAllAsRead,
+  clearReadNotifications,
 } = require('../controllers/notificationController');
 
 router.use(authMiddleware);
 
 router.get('/', getMyNotifications);
 router.get('/unread-count', getUnreadCount);
-router.patch('/:id/read', markAsRead);
+router.delete('/read', clearReadNotifications);
 router.patch('/read-all', markAllAsRead);
+router.patch('/:id/read', markAsRead);
 
 module.exports = router;
