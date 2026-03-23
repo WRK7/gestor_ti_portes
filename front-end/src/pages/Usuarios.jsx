@@ -56,6 +56,10 @@ function UserModal({ user, onClose, onSave, currentUserRole, currentUserId }) {
     e.preventDefault();
     if (!form.username.trim()) { setError('Usuário é obrigatório'); return; }
     if (!isEdit && !form.password.trim()) { setError('Senha é obrigatória para novo usuário'); return; }
+    if (form.password.trim() && form.password.trim().length < 6) {
+      setError('A senha deve ter pelo menos 6 caracteres');
+      return;
+    }
     setError('');
     setLoading(true);
     try {
@@ -145,7 +149,10 @@ function UserModal({ user, onClose, onSave, currentUserRole, currentUserId }) {
                 <div className="input-group" style={{ flex: 1 }}>
                   <label className="input-label">{isEdit ? 'Nova senha' : 'Senha *'}</label>
                   {isEdit && (
-                    <span className="input-label-hint">Deixe em branco para manter a senha atual.</span>
+                    <span className="input-label-hint">Deixe em branco para manter a senha atual. Se preencher, mínimo 6 caracteres.</span>
+                  )}
+                  {!isEdit && (
+                    <span className="input-label-hint">Mínimo 6 caracteres.</span>
                   )}
                   <input className="input" type="password" placeholder={isEdit ? '••••••••' : 'Senha'}
                     value={form.password} onChange={set('password')}
@@ -201,7 +208,6 @@ export default function Usuarios() {
   const [search, setSearch] = useState('');
 
   const isSuperAdmin = currentUser?.role === 'superadmin';
-  const isAdmin = currentUser?.role === 'admin' || isSuperAdmin;
   const isGestor = currentUser?.role === 'gestor';
   const isRH = currentUser?.role === 'rh';
 
@@ -278,7 +284,7 @@ export default function Usuarios() {
   return (
     <div className="dashboard">
       <div className="dashboard-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="users-header-left">
           <button className="btn btn-ghost btn-icon" onClick={() => navigate('/configuracoes')} title="Voltar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="15 18 9 12 15 6"/>
@@ -310,7 +316,7 @@ export default function Usuarios() {
       </div>
 
       {/* Search */}
-      <div style={{ marginBottom: 20, maxWidth: 360, position: 'relative' }}>
+      <div className="users-search-wrap">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
           style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none' }}>
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -354,7 +360,7 @@ export default function Usuarios() {
             <tbody>
               {filtered.map(u => (
                 <tr key={u.id} style={{ opacity: u.active ? 1 : 0.55 }}>
-                  <td>
+                  <td data-label="Nome">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div className="user-avatar-sm">
                         {(u.name || u.username).split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
@@ -362,10 +368,10 @@ export default function Usuarios() {
                       <span style={{ fontWeight: 500, color: 'var(--gray-900)', fontSize: 13 }}>{u.name || u.username}</span>
                     </div>
                   </td>
-                  <td style={{ fontSize: 13, color: 'var(--gray-500)' }}>{u.username}</td>
-                  <td style={{ fontSize: 13, color: 'var(--gray-500)' }}>{u.email || '—'}</td>
-                  <td><RoleBadge role={u.role} /></td>
-                  <td>
+                  <td data-label="Usuário" style={{ fontSize: 13, color: 'var(--gray-500)' }}>{u.username}</td>
+                  <td data-label="E-mail" style={{ fontSize: 13, color: 'var(--gray-500)' }}>{u.email || '—'}</td>
+                  <td data-label="Cargo"><RoleBadge role={u.role} /></td>
+                  <td data-label="Status">
                     {canManageUserLifecycle(u) ? (
                       <button
                         className={`status-toggle ${u.active ? 'active' : 'inactive'}`}
@@ -382,7 +388,7 @@ export default function Usuarios() {
                       </span>
                     )}
                   </td>
-                  <td>
+                  <td data-label="Ações">
                     <div style={{ display: 'flex', gap: 4 }}>
                       {canEditUser(u) ? (
                         <>
@@ -425,10 +431,12 @@ export default function Usuarios() {
 
       <style>{`
         .dashboard { padding: 28px 32px; width: 100%; }
-        .dashboard-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }
+        .dashboard-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
         .dashboard-title { font-size: 22px; font-weight: 700; color: var(--gray-900); letter-spacing: -0.3px; }
         .dashboard-date { font-size: 13px; color: var(--gray-400); margin-top: 2px; }
-        .dashboard-header-actions { display: flex; gap: 8px; align-items: center; }
+        .dashboard-header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .users-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .users-search-wrap { margin-bottom: 20px; max-width: 360px; position: relative; }
 
         .users-table-wrap {
           background: var(--white);
@@ -502,6 +510,41 @@ export default function Usuarios() {
         .task-action-btn.red:hover { background: var(--red-50); color: var(--red-600); border-color: var(--red-100); }
 
         .tasks-loading { display: flex; align-items: center; gap: 10px; padding: 40px 20px; color: var(--gray-400); font-size: 14px; }
+
+        @media (max-width: 900px) {
+          .dashboard { padding: 20px 16px; }
+          .users-header-left { width: 100%; }
+          .dashboard-header-actions { width: 100%; }
+          .users-search-wrap { max-width: 100%; }
+          .users-table-wrap { overflow-x: auto; }
+        }
+        @media (max-width: 700px) {
+          .users-table thead { display: none; }
+          .users-table,
+          .users-table tbody,
+          .users-table tr,
+          .users-table td { display: block; width: 100%; }
+          .users-table tbody tr {
+            opacity: 1 !important;
+            border-bottom: 1px solid var(--gray-200);
+            padding: 10px 12px;
+          }
+          .users-table td {
+            border-bottom: 1px dashed var(--gray-100);
+            padding: 8px 0;
+          }
+          .users-table td:last-child { border-bottom: none; }
+          .users-table td[data-label]::before {
+            content: attr(data-label);
+            display: block;
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--gray-400);
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            margin-bottom: 4px;
+          }
+        }
       `}</style>
     </div>
   );

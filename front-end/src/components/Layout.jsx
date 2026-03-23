@@ -85,7 +85,9 @@ function playNotifSound() {
     const a = getNotifAudio();
     a.currentTime = 0;
     a.play().catch(() => {});
-  } catch (_) {}
+  } catch {
+    // intentionally ignore sound playback failures
+  }
 }
 
 function showNativeNotification(title, body) {
@@ -104,7 +106,9 @@ function showNativeNotification(title, body) {
       window.focus();
       n.close();
     };
-  } catch (_) { /* mobile / insecure context */ }
+  } catch {
+    // ignored for unsupported contexts (e.g. mobile browsers)
+  }
 }
 
 const navItems = [
@@ -182,7 +186,7 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const { confirm } = useDialog();
   const navigate = useNavigate();
-  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [notifs, setNotifs] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
@@ -242,6 +246,14 @@ export default function Layout() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showNotifs]);
 
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth > 900) setMobileNavOpen(false);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const handleBellClick = () => {
     if (!showNotifs) fetchNotifs();
     setShowNotifs(p => !p);
@@ -259,12 +271,12 @@ export default function Layout() {
     setUnreadCount(0);
   };
 
-  const hasReadNotifs = notifs.some(n => Number(n.is_read) === 1);
+  const hasAnyNotifs = notifs.length > 0;
 
   const handleClearRead = async () => {
-    if (!hasReadNotifs) return;
+    if (!hasAnyNotifs) return;
     const ok = await confirm(
-      'Remover da lista todas as notificações já visualizadas? As não lidas permanecem.',
+      'Remover da lista todas as notificações?',
       {
         title: 'Limpar notificações',
         variant: 'warning',
@@ -274,8 +286,11 @@ export default function Layout() {
     if (!ok) return;
     try {
       await api.delete('/notifications/read');
-      setNotifs(p => p.filter(n => Number(n.is_read) !== 1));
-    } catch (_) { /* silencioso */ }
+      setNotifs([]);
+      setUnreadCount(0);
+    } catch {
+      // intentionally silent
+    }
   };
 
   const handleNotifClick = (notif) => {
@@ -295,7 +310,21 @@ export default function Layout() {
 
   return (
     <div className="layout">
-      <aside className="sidebar">
+      <button
+        className="mobile-nav-toggle"
+        onClick={() => setMobileNavOpen(true)}
+        aria-label="Abrir menu"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="3" y1="18" x2="21" y2="18" />
+        </svg>
+      </button>
+
+      {mobileNavOpen && <div className="mobile-nav-backdrop" onClick={() => setMobileNavOpen(false)} />}
+
+      <aside className={`sidebar${mobileNavOpen ? ' mobile-open' : ''}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo">
             <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
@@ -318,6 +347,7 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               end={item.to !== '/configuracoes'}
+              onClick={() => setMobileNavOpen(false)}
               className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
             >
               <span className="sidebar-link-icon">{item.icon}</span>
@@ -345,8 +375,8 @@ export default function Layout() {
                   {unreadCount > 0 && (
                     <button type="button" className="notif-read-all" onClick={handleMarkAllRead}>Marcar todas como lidas</button>
                   )}
-                  {hasReadNotifs && (
-                    <button type="button" className="notif-clear-read" onClick={handleClearRead}>Limpar visualizadas</button>
+                  {hasAnyNotifs && (
+                    <button type="button" className="notif-clear-read" onClick={handleClearRead}>Limpar notificações</button>
                   )}
                 </div>
               </div>
@@ -376,7 +406,7 @@ export default function Layout() {
 
 
         <div className="sidebar-footer">
-          <div className="sidebar-user" onClick={() => setShowUserMenu(p => !p)}>
+          <div className="sidebar-user">
             <div className="sidebar-avatar">{initials}</div>
             <div className="sidebar-user-info">
               <p className="sidebar-user-name">{user?.name || user?.username}</p>
@@ -411,6 +441,13 @@ export default function Layout() {
           display: flex;
           flex-direction: column;
           z-index: 100;
+          transition: transform 0.2s ease;
+        }
+        .mobile-nav-toggle {
+          display: none;
+        }
+        .mobile-nav-backdrop {
+          display: none;
         }
         .sidebar-header {
           display: flex;
@@ -707,6 +744,46 @@ export default function Layout() {
           font-size: 10px;
           color: var(--gray-400);
           margin: 0;
+        }
+
+        @media (max-width: 900px) {
+          .mobile-nav-toggle {
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            width: 36px;
+            height: 36px;
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            background: var(--white);
+            color: var(--gray-700);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 220;
+            box-shadow: var(--shadow-sm);
+          }
+          .mobile-nav-backdrop {
+            display: block;
+            position: fixed;
+            inset: 0;
+            background: rgba(17, 24, 39, 0.35);
+            z-index: 140;
+          }
+          .sidebar {
+            transform: translateX(-100%);
+            z-index: 200;
+          }
+          .sidebar.mobile-open {
+            transform: translateX(0);
+          }
+          .notif-dropdown {
+            left: 8px;
+            right: 8px;
+            width: auto;
+            bottom: auto;
+            top: calc(100% + 8px);
+          }
         }
       `}</style>
     </div>

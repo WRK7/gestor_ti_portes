@@ -1,11 +1,2 @@
-INSERT IGNORE INTO users (username, email, password, name, role, active, authorizationStatus, approved_at)
-VALUES (
-  'Wesley Cruz',
-  'wesleyc09gomes@gmail.com',
-  '$2b$10$8xFsrnz.TIfbFm1ktZmWbOBopRssfJYxYujc.c5ecRIucFwg6cBj6',
-  'Wesley Cruz',
-  'admin',
-  1,
-  'approved',
-  NOW()
-);
+-- Não insira contas administrativas fixas aqui (risco de segurança).
+-- Use: npm run bootstrap:admin (variáveis ADMIN_* no .env — ver README do back-end).

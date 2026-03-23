@@ -69,16 +69,16 @@ const markAllAsRead = async (req, res) => {
   }
 };
 
-/** Remove do banco apenas notificações já lidas (limpa a lista visual) */
+/** Remove do banco todas as notificações do usuário logado */
 const clearReadNotifications = async (req, res) => {
   try {
     const [result] = await pool.query(
-      `DELETE FROM notifications_ti WHERE user_id = ? AND is_read = 1`,
+      `DELETE FROM notifications_ti WHERE user_id = ?`,
       [req.user.id]
     );
     return res.json({ success: true, deleted: result.affectedRows ?? 0 });
   } catch (err) {
-    console.error('Erro ao limpar notificações lidas:', err);
+    console.error('Erro ao limpar notificações:', err);
     return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 };
@@ -94,11 +94,19 @@ const notify = async (userId, type, title, message, link = null) => {
   }
 };
 
-const notifyMultiple = async (userIds, type, title, message, link = null) => {
-  if (!userIds?.length) return;
-
+/**
+ * Envia a mesma notificação a vários usuários + todos os gestores/admins/superadmins.
+ * @param {number[]} userIds - destinatários diretos (pode ser [])
+ * @param {string} excludeUserId - opcional: não notifica este usuário (ex.: quem disparou a ação)
+ */
+const notifyMultiple = async (userIds, type, title, message, link = null, excludeUserId = null) => {
   const managerIds = await getManagerIds();
-  const allIds = [...new Set([...userIds, ...managerIds])];
+  let allIds = [...new Set([...(userIds || []), ...managerIds])];
+  if (excludeUserId != null) {
+    const ex = Number(excludeUserId);
+    allIds = allIds.filter((uid) => Number(uid) !== ex);
+  }
+  if (!allIds.length) return;
 
   for (const uid of allIds) {
     await notify(uid, type, title, message, link);

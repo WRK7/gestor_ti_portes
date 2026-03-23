@@ -105,6 +105,11 @@ function TaskCard({ task, onEdit, onComplete, onDelete, onPause, onResume, onSen
         {task.description && (
           <p className="task-desc">{task.description}</p>
         )}
+        {task.status === 'paused' && task.pause_reason && (
+          <p className="task-pause-reason">
+            Motivo da pausa: {task.pause_reason}
+          </p>
+        )}
       </div>
 
       <div className="task-dev-time">
@@ -210,6 +215,9 @@ export default function Dashboard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [filter, setFilter] = useState('all');
+  const [pauseModalTaskId, setPauseModalTaskId] = useState(null);
+  const [pauseReason, setPauseReason] = useState('');
+  const [pauseSubmitting, setPauseSubmitting] = useState(false);
   const timerRef = useRef(null);
 
   const fetchData = useCallback(async () => {
@@ -238,12 +246,36 @@ export default function Dashboard() {
     return () => clearInterval(timerRef.current);
   }, [tasks, fetchData]);
 
-  const handlePause = async (id) => {
+  const handlePause = (id) => {
+    setPauseModalTaskId(id);
+    setPauseReason('');
+  };
+
+  const closePauseModal = () => {
+    setPauseModalTaskId(null);
+    setPauseReason('');
+  };
+
+  const submitPause = async () => {
+    const reason = pauseReason.trim();
+    if (!reason) {
+      await alert('Informe um motivo para pausar a tarefa.', {
+        title: 'Motivo obrigatório',
+        variant: 'warning',
+      });
+      return;
+    }
+
     try {
-      await api.patch(`/tasks/${id}/pause`);
+      setPauseSubmitting(true);
+      await api.patch(`/tasks/${pauseModalTaskId}/pause`, { reason });
+      closePauseModal();
       fetchData();
     } catch (err) {
-      console.error('Erro ao pausar tarefa:', err);
+      const msg = err.response?.data?.error || 'Erro ao pausar tarefa';
+      await alert(msg, { title: 'Erro', variant: 'error' });
+    } finally {
+      setPauseSubmitting(false);
     }
   };
 
@@ -474,6 +506,41 @@ export default function Dashboard() {
         />
       )}
 
+      {pauseModalTaskId && (
+        <div className="modal-overlay pause-reason-overlay">
+          <div className="modal pause-reason-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Pausar Tarefa</h2>
+            </div>
+            <div className="modal-body">
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label className="input-label">Motivo da pausa *</label>
+                <textarea
+                  className="input"
+                  placeholder="Ex.: Aguardando API do cliente para continuar a automação."
+                  value={pauseReason}
+                  onChange={(e) => setPauseReason(e.target.value)}
+                  rows={4}
+                  maxLength={500}
+                  autoFocus
+                />
+                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--gray-400)', textAlign: 'right' }}>
+                  {pauseReason.length}/500
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={closePauseModal} disabled={pauseSubmitting}>
+                Cancelar
+              </button>
+              <button type="button" className="btn btn-primary" onClick={submitPause} disabled={pauseSubmitting}>
+                {pauseSubmitting ? 'Pausando...' : 'Confirmar Pausa'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         .dashboard {
           padding: 28px 32px;
@@ -483,6 +550,8 @@ export default function Dashboard() {
           display: flex;
           align-items: flex-start;
           justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
           margin-bottom: 28px;
         }
         .dashboard-title {
@@ -500,6 +569,7 @@ export default function Dashboard() {
           display: flex;
           gap: 8px;
           align-items: center;
+          flex-wrap: wrap;
         }
         .stats-grid {
           display: grid;
@@ -557,6 +627,8 @@ export default function Dashboard() {
           padding: 4px;
           border-radius: 10px;
           width: fit-content;
+          max-width: 100%;
+          overflow-x: auto;
         }
         .filter-tab {
           display: flex;
@@ -669,6 +741,20 @@ export default function Dashboard() {
           font-size: 13px;
           color: var(--gray-500);
           line-height: 1.5;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        .task-pause-reason {
+          margin-top: 8px;
+          font-size: 12px;
+          color: var(--indigo-700);
+          background: var(--indigo-50);
+          border: 1px solid var(--indigo-100);
+          border-radius: 8px;
+          padding: 6px 8px;
+          line-height: 1.4;
           display: -webkit-box;
           -webkit-line-clamp: 2;
           -webkit-box-orient: vertical;
@@ -845,6 +931,13 @@ export default function Dashboard() {
           .stats-grid, .stats-5 { grid-template-columns: 1fr; }
           .tasks-grid { grid-template-columns: 1fr; }
           .dashboard { padding: 20px 16px; }
+          .filter-tab { white-space: nowrap; }
+        }
+        .pause-reason-overlay {
+          z-index: 99999;
+        }
+        .pause-reason-modal {
+          max-width: 560px;
         }
       `}</style>
     </div>

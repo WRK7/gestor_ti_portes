@@ -274,6 +274,7 @@ export default function Billing() {
   const [loading, setLoading] = useState(true);
   const printRef = useRef(null);
   const [billingReady, setBillingReady] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 700);
 
   // Aplica filtro salvo antes do 1º fetch (evita flash com mês/ano do relógio)
   useEffect(() => {
@@ -304,6 +305,12 @@ export default function Billing() {
       api.get('/tasks/users').then(r => setUsers(r.data)).catch(() => {});
     }
   }, [isManager]);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 700);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -345,55 +352,83 @@ export default function Billing() {
 
   const [exporting, setExporting] = useState(false);
 
+  const buildPdfSource = () => {
+    if (!printRef.current) return null;
+    const sourceEl = printRef.current;
+    const clone = sourceEl.cloneNode(true);
+    clone.classList.add('pdf-exporting');
+    clone.classList.add('billing-pdf-force');
+
+    const exportRoot = document.createElement('div');
+    exportRoot.style.position = 'fixed';
+    exportRoot.style.left = '-10000px';
+    exportRoot.style.top = '0';
+    exportRoot.style.width = `${sourceEl.scrollWidth}px`;
+    exportRoot.style.background = '#ffffff';
+    exportRoot.style.zIndex = '-1';
+    exportRoot.style.pointerEvents = 'none';
+    exportRoot.appendChild(clone);
+    document.body.appendChild(exportRoot);
+    return { exportRoot, clone };
+  };
+
+  const buildPdfFilename = () => `billing_${MONTH_NAMES[month - 1].toLowerCase()}_${year}${
+    selectedUserName ? `_${selectedUserName.replace(/\s+/g, '_')}` : ''
+  }.pdf`;
+
+  const buildPdfWorker = (clone, filename) => (
+    html2pdf()
+      .set({
+        margin:      [8, 8, 8, 8],
+        filename,
+        image:       { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: clone.scrollWidth,
+        },
+        jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
+        pagebreak:   { mode: ['css', 'legacy'] },
+      })
+      .from(clone)
+  );
+
   const handleDownloadPdf = async () => {
     if (!printRef.current || exporting) return;
     setExporting(true);
-    let exportRoot = null;
+    const source = buildPdfSource();
+    if (!source) {
+      setExporting(false);
+      return;
+    }
     try {
-      const filename = `billing_${MONTH_NAMES[month - 1].toLowerCase()}_${year}${
-        selectedUserName
-          ? `_${selectedUserName.replace(/\s+/g, '_')}`
-          : ''
-      }.pdf`;
-
-      const sourceEl = printRef.current;
-      const clone = sourceEl.cloneNode(true);
-      clone.classList.add('pdf-exporting');
-
-      exportRoot = document.createElement('div');
-      exportRoot.style.position = 'fixed';
-      exportRoot.style.left = '-10000px';
-      exportRoot.style.top = '0';
-      exportRoot.style.width = `${sourceEl.scrollWidth}px`;
-      exportRoot.style.background = '#ffffff';
-      exportRoot.style.zIndex = '-1';
-      exportRoot.style.pointerEvents = 'none';
-      exportRoot.appendChild(clone);
-      document.body.appendChild(exportRoot);
-
-      // Aguarda um frame para garantir layout estável antes do snapshot.
       await new Promise(resolve => requestAnimationFrame(resolve));
-
-      await html2pdf()
-        .set({
-          margin:      [8, 8, 8, 8],
-          filename,
-          image:       { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: '#ffffff',
-            scrollX: 0,
-            scrollY: 0,
-            windowWidth: clone.scrollWidth,
-          },
-          jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
-          pagebreak:   { mode: ['css', 'legacy'] },
-        })
-        .from(clone)
-        .save();
+      await buildPdfWorker(source.clone, buildPdfFilename()).save();
     } finally {
-      if (exportRoot && exportRoot.parentNode) exportRoot.parentNode.removeChild(exportRoot);
+      if (source.exportRoot?.parentNode) source.exportRoot.parentNode.removeChild(source.exportRoot);
+      setExporting(false);
+    }
+  };
+
+  const handlePreviewPdf = async () => {
+    if (!printRef.current || exporting) return;
+    setExporting(true);
+    const source = buildPdfSource();
+    if (!source) {
+      setExporting(false);
+      return;
+    }
+    try {
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      const blob = await buildPdfWorker(source.clone, buildPdfFilename()).toPdf().outputPdf('blob');
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 120000);
+    } finally {
+      if (source.exportRoot?.parentNode) source.exportRoot.parentNode.removeChild(source.exportRoot);
       setExporting(false);
     }
   };
@@ -407,7 +442,7 @@ export default function Billing() {
           <p className="billing-subtitle">Relatório de bonificações aprovadas</p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="billing-topbar-actions">
           <button className="btn btn-secondary" onClick={handleDownloadPdf} disabled={exporting || items.length === 0} title="Baixar PDF">
             {exporting ? (
               <div className="spinner" style={{ width: 14, height: 14 }} />
@@ -431,102 +466,142 @@ export default function Billing() {
         </div>
       </div>
 
-      {/* ── filtros: dropdowns em linha ── */}
-      <div className="billing-filters no-print">
-        <select className="input billing-select" value={month} onChange={e => setMonthAndPersist(Number(e.target.value))}>
-          {MONTH_NAMES.map((n, i) => (
-            <option key={i+1} value={i+1}>{n}</option>
-          ))}
-        </select>
-
-        <select className="input billing-select" value={year} onChange={e => setYearAndPersist(Number(e.target.value))}>
-          {years.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-
-        {isManager && (
-          <select className="input billing-select billing-select-user" value={userId} onChange={e => setUserId(e.target.value)}>
-            <option value="">Todos os responsáveis</option>
-            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-        )}
-      </div>
-
-      {/* ── print header (only visible when printing) ── */}
-      <div className="print-header">
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Relatório de Billing</h1>
-          <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>
-            {MONTH_NAMES[month - 1]} {year}{selectedUserName ? ` · ${selectedUserName}` : ''}
-          </p>
-        </div>
-        <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>
-          Gerado em {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
-        </p>
-      </div>
-
-      {/* ── summary cards ── */}
-      <div className="billing-summary">
-        <div className="bill-stat">
-          <span className="bill-stat-label">Projetos bonificados</span>
-          <span className="bill-stat-val">{items.length}</span>
-        </div>
-        <div className="bill-stat bill-stat-highlight">
-          <span className="bill-stat-label">Total aprovado</span>
-          <span className="bill-stat-val">{fmtMoney(totalApproved)}</span>
-        </div>
-        <div className="bill-stat">
-          <span className="bill-stat-label">Total sugerido</span>
-          <span className="bill-stat-val">{fmtMoney(totalSuggested)}</span>
-        </div>
-        <div className="bill-stat">
-          <span className="bill-stat-label">Média por projeto</span>
-          <span className="bill-stat-val">{items.length ? fmtMoney(avgVal) : '—'}</span>
-        </div>
-      </div>
-
-      {/* ── content ── */}
-      {loading ? (
-        <div className="billing-loading">
-          <div className="spinner" style={{ width: 32, height: 32 }} />
-          <span>Carregando relatório...</span>
-        </div>
-      ) : items.length === 0 ? (
-        <div className="billing-empty">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/>
-            <line x1="16" y1="17" x2="8" y2="17"/>
-          </svg>
-          <p>Nenhuma bonificação aprovada em {MONTH_NAMES[month-1]} {year}</p>
-          <p className="billing-empty-hint">
-            Filtro pelo <strong>mês/ano em que a bonificação foi aprovada</strong>. Troque mês/ano acima se não houver dados neste período.
-          </p>
-        </div>
-      ) : (
-        <div className="billing-list">
-          {items.map((p, i) => (
-            <BillingCard key={p.id} project={p} index={i + 1} />
-          ))}
-
-          {/* total footer */}
-          <div className="bill-total-footer">
-            <span>{items.length} projeto{items.length !== 1 ? 's' : ''} · {MONTH_NAMES[month-1]} {year}</span>
-            <div style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
-              {totalSuggested > 0 && totalSuggested !== totalApproved && (
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 2 }}>Sugerido</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-500)' }}>{fmtMoney(totalSuggested)}</div>
-                </div>
-              )}
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 2 }}>Total aprovado</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--green-600)' }}>{fmtMoney(totalApproved)}</div>
-              </div>
+      {isMobile && (
+        <div className="billing-mobile-actions no-print">
+          <div className="billing-mobile-card">
+            <div className="billing-mobile-card-head">
+              <span className="billing-mobile-pill">Relatorio</span>
+              <span className="billing-mobile-period">{MONTH_NAMES[month - 1]} {year}</span>
             </div>
+            <p className="billing-mobile-caption">
+              {items.length} projeto{items.length !== 1 ? 's' : ''} · total aprovado {fmtMoney(totalApproved)}
+            </p>
+
+            <button className="billing-mobile-action" onClick={handleDownloadPdf} disabled={exporting || items.length === 0}>
+              <span className="billing-mobile-action-icon">↓</span>
+              <span className="billing-mobile-action-content">
+                <strong>{exporting ? 'Gerando PDF...' : 'Baixar PDF'}</strong>
+                <small>Salvar o arquivo no dispositivo</small>
+              </span>
+            </button>
+
+            <button className="billing-mobile-action" onClick={handlePrint} disabled={exporting || items.length === 0}>
+              <span className="billing-mobile-action-icon">⎙</span>
+              <span className="billing-mobile-action-content">
+                <strong>Imprimir</strong>
+                <small>Abrir dialogo de impressao</small>
+              </span>
+            </button>
+
+            <button className="billing-mobile-action primary" onClick={handlePreviewPdf} disabled={exporting || items.length === 0}>
+              <span className="billing-mobile-action-icon">▣</span>
+              <span className="billing-mobile-action-content">
+                <strong>Visualizar PDF</strong>
+                <small>Prévia completa em nova aba</small>
+              </span>
+            </button>
           </div>
         </div>
       )}
+
+      <div className="billing-report-content">
+        {/* ── filtros: dropdowns em linha ── */}
+        <div className="billing-filters no-print">
+          <select className="input billing-select" value={month} onChange={e => setMonthAndPersist(Number(e.target.value))}>
+            {MONTH_NAMES.map((n, i) => (
+              <option key={i+1} value={i+1}>{n}</option>
+            ))}
+          </select>
+
+          <select className="input billing-select" value={year} onChange={e => setYearAndPersist(Number(e.target.value))}>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+
+          {isManager && (
+            <select className="input billing-select billing-select-user" value={userId} onChange={e => setUserId(e.target.value)}>
+              <option value="">Todos os responsáveis</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          )}
+        </div>
+
+        {/* ── print header (only visible when printing) ── */}
+        <div className="print-header">
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Relatório de Billing</h1>
+            <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>
+              {MONTH_NAMES[month - 1]} {year}{selectedUserName ? ` · ${selectedUserName}` : ''}
+            </p>
+          </div>
+          <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>
+            Gerado em {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+          </p>
+        </div>
+
+        {/* ── summary cards ── */}
+        <div className="billing-summary">
+          <div className="bill-stat">
+            <span className="bill-stat-label">Projetos bonificados</span>
+            <span className="bill-stat-val">{items.length}</span>
+          </div>
+          <div className="bill-stat bill-stat-highlight">
+            <span className="bill-stat-label">Total aprovado</span>
+            <span className="bill-stat-val">{fmtMoney(totalApproved)}</span>
+          </div>
+          <div className="bill-stat">
+            <span className="bill-stat-label">Total sugerido</span>
+            <span className="bill-stat-val">{fmtMoney(totalSuggested)}</span>
+          </div>
+          <div className="bill-stat">
+            <span className="bill-stat-label">Média por projeto</span>
+            <span className="bill-stat-val">{items.length ? fmtMoney(avgVal) : '—'}</span>
+          </div>
+        </div>
+
+        {/* ── content ── */}
+        {loading ? (
+          <div className="billing-loading">
+            <div className="spinner" style={{ width: 32, height: 32 }} />
+            <span>Carregando relatório...</span>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="billing-empty">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            <p>Nenhuma bonificação aprovada em {MONTH_NAMES[month-1]} {year}</p>
+            <p className="billing-empty-hint">
+              Filtro pelo <strong>mês/ano em que a bonificação foi aprovada</strong>. Troque mês/ano acima se não houver dados neste período.
+            </p>
+          </div>
+        ) : (
+          <div className="billing-list">
+            {items.map((p, i) => (
+              <BillingCard key={p.id} project={p} index={i + 1} />
+            ))}
+
+            {/* total footer */}
+            <div className="bill-total-footer">
+              <span>{items.length} projeto{items.length !== 1 ? 's' : ''} · {MONTH_NAMES[month-1]} {year}</span>
+              <div className="bill-total-values">
+                {totalSuggested > 0 && totalSuggested !== totalApproved && (
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 2 }}>Sugerido</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-500)' }}>{fmtMoney(totalSuggested)}</div>
+                  </div>
+                )}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 2 }}>Total aprovado</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--green-600)' }}>{fmtMoney(totalApproved)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       <style>{`
         .billing-page {
@@ -539,8 +614,105 @@ export default function Billing() {
           align-items: center;
           justify-content: space-between;
           gap: 16px;
+          flex-wrap: wrap;
           margin-bottom: 14px;
         }
+        .billing-topbar-actions {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .billing-mobile-actions { display: none; }
+        .billing-mobile-card {
+          background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+          border: 1px solid var(--gray-200);
+          border-radius: 14px;
+          padding: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .billing-mobile-card-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .billing-mobile-pill {
+          font-size: 10px;
+          font-weight: 700;
+          color: var(--blue-600);
+          background: var(--blue-50);
+          border: 1px solid var(--blue-100);
+          border-radius: 999px;
+          padding: 2px 8px;
+          text-transform: uppercase;
+          letter-spacing: .06em;
+        }
+        .billing-mobile-period {
+          font-size: 12px;
+          color: var(--gray-500);
+          font-weight: 600;
+        }
+        .billing-mobile-caption {
+          font-size: 12px;
+          color: var(--gray-500);
+          margin: 0 0 2px;
+        }
+        .billing-mobile-action {
+          width: 100%;
+          border: 1px solid var(--gray-200);
+          background: var(--white);
+          border-radius: 10px;
+          padding: 10px 12px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          text-align: left;
+          color: var(--gray-700);
+          font-family: inherit;
+          cursor: pointer;
+        }
+        .billing-mobile-action:disabled { opacity: .55; cursor: not-allowed; }
+        .billing-mobile-action-icon {
+          width: 24px;
+          height: 24px;
+          border-radius: 7px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--gray-100);
+          color: var(--gray-700);
+          font-size: 12px;
+          font-weight: 700;
+          flex-shrink: 0;
+        }
+        .billing-mobile-action-content {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+          min-width: 0;
+        }
+        .billing-mobile-action-content strong {
+          font-size: 13px;
+          color: inherit;
+          font-weight: 700;
+        }
+        .billing-mobile-action-content small {
+          font-size: 11px;
+          color: var(--gray-500);
+        }
+        .billing-mobile-action.primary {
+          border-color: var(--blue-100);
+          background: var(--blue-50);
+          color: var(--blue-700);
+        }
+        .billing-mobile-action.primary .billing-mobile-action-icon {
+          background: rgba(37, 99, 235, 0.15);
+          color: var(--blue-700);
+        }
+        .billing-pdf-force .billing-report-content { display: block !important; }
+        .billing-pdf-force .billing-mobile-actions { display: none !important; }
         .billing-title {
           font-size: 22px;
           font-weight: 800;
@@ -556,6 +728,7 @@ export default function Billing() {
           display: flex;
           gap: 8px;
           align-items: center;
+          flex-wrap: wrap;
           margin-bottom: 20px;
         }
         .billing-select {
@@ -838,7 +1011,7 @@ export default function Billing() {
         }
         .bill-value-item { display: flex; flex-direction: column; gap: 2px; flex: 1; }
         .bill-value-label { font-size: 10px; font-weight: 600; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.05em; }
-        .bill-value-num { font-size: 16px; font-weight: 800; }
+        .bill-value-num { font-size: 16px; font-weight: 800; word-break: break-word; line-height: 1.25; }
         .bill-suggested { color: var(--gray-500); }
         .bill-approved  { color: var(--green-600); }
 
@@ -862,6 +1035,8 @@ export default function Billing() {
           display: flex;
           align-items: center;
           justify-content: space-between;
+          gap: 14px;
+          flex-wrap: wrap;
           padding: 20px 24px;
           background: var(--white);
           border: 1px solid var(--gray-200);
@@ -870,6 +1045,11 @@ export default function Billing() {
           font-size: 13px;
           color: var(--gray-500);
           font-weight: 500;
+        }
+        .bill-total-values {
+          display: flex;
+          gap: 32px;
+          align-items: center;
         }
 
         /* print */
@@ -926,10 +1106,43 @@ export default function Billing() {
         .pdf-exporting .bill-col-info * { color: #e5e7eb !important; }
         .pdf-exporting .bill-approved { color: #16a34a !important; }
 
+        @media (max-width: 900px) {
+          .billing-summary { grid-template-columns: 1fr; }
+          .bill-values-row { flex-direction: column; gap: 10px; }
+          .bill-value-item { min-width: 0; }
+        }
         @media (max-width: 700px) {
-          .billing-summary { grid-template-columns: repeat(2, 1fr); }
+          .billing-page { padding: 20px 16px; }
+          .billing-topbar-actions { display: none; }
+          .billing-mobile-actions {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+            margin-bottom: 14px;
+          }
+          .billing-report-content { display: none; }
+          .billing-topbar-actions { width: 100%; }
+          .billing-topbar-actions .btn { flex: 1; justify-content: center; min-width: 140px; }
+          .billing-filters { margin-bottom: 16px; }
+          .billing-select,
+          .billing-select-user {
+            flex: 1 1 100%;
+            min-width: 0;
+            max-width: 100%;
+          }
           .bill-card-body  { grid-template-columns: 1fr; }
           .bill-col-info   { border-right: none; border-bottom: 1px solid var(--gray-100); }
+          .bill-card-header { flex-wrap: wrap; }
+          .bill-project-name { word-break: break-word; }
+          .bill-total-values {
+            width: 100%;
+            justify-content: space-between;
+            gap: 12px;
+          }
+        }
+        @media (max-width: 480px) {
+          .billing-topbar-actions .btn { min-width: 0; width: 100%; }
+          .bill-total-footer { padding: 16px; }
         }
 
         @media print {

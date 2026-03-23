@@ -4,9 +4,12 @@ import api from '../services/api';
 
 /* ─── helpers ───────────────────────────────────────────────────── */
 const formatDevTime = (s) => {
-  if (!s || s <= 0) return '—';
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
+  const raw = Number(s);
+  // Guard rail against corrupted/unexpected values (NaN, Infinity, huge outliers)
+  if (!Number.isFinite(raw) || raw <= 0) return '—';
+  const safeSeconds = Math.min(Math.floor(raw), 31_536_000); // cap at 1 year
+  const h = Math.floor(safeSeconds / 3600);
+  const m = Math.floor((safeSeconds % 3600) / 60);
   if (h === 0) return `${m}min`;
   if (m === 0) return `${h}h`;
   return `${h}h ${m}min`;
@@ -73,16 +76,23 @@ function AssigneeRow({ assignees }) {
 }
 
 function LiveTimer({ task }) {
-  const secs = useRef(task.current_dev_seconds || task.dev_seconds || 0);
-  const [display, setDisplay] = useState(secs.current);
+  const normalizeSeconds = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.min(Math.floor(n), 31_536_000);
+  };
+
+  const initialSeconds = normalizeSeconds(task.current_dev_seconds ?? task.dev_seconds ?? 0);
+  const secs = useRef(initialSeconds);
+  const [display, setDisplay] = useState(initialSeconds);
 
   useEffect(() => {
-    secs.current = task.current_dev_seconds || task.dev_seconds || 0;
+    secs.current = normalizeSeconds(task.current_dev_seconds ?? task.dev_seconds ?? 0);
     setDisplay(secs.current);
     if (task.status !== 'pending') return;
     const id = setInterval(() => { secs.current += 1; setDisplay(secs.current); }, 1000);
     return () => clearInterval(id);
-  }, [task.id, task.status, task.current_dev_seconds]);
+  }, [task.id, task.status, task.current_dev_seconds, task.dev_seconds]);
 
   const isRunning = task.status === 'pending';
   return (
@@ -128,6 +138,9 @@ function ManagerTaskCard({ task, accentColor, isOverdue }) {
       <div className="task-card-body">
         <div className="task-title">{task.title}</div>
         {task.description && <div className="task-desc">{task.description}</div>}
+        {task.status === 'paused' && task.pause_reason && (
+          <div className="task-pause-reason">Motivo da pausa: {task.pause_reason}</div>
+        )}
       </div>
 
       {/* footer */}
@@ -243,7 +256,7 @@ export default function ModoGestor() {
         .dashboard-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
         .dashboard-title { font-size: 22px; font-weight: 700; color: var(--gray-900); letter-spacing: -0.3px; }
         .dashboard-date { font-size: 13px; color: var(--gray-400); margin-top: 2px; }
-        .dashboard-header-actions { display: flex; gap: 8px; align-items: center; }
+        .dashboard-header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
         .stat-card {
           background: var(--white); border-radius: var(--radius-lg); border: 1px solid var(--gray-200);
@@ -259,7 +272,7 @@ export default function ModoGestor() {
         .stat-value { font-size: 26px; font-weight: 700; color: var(--gray-900); line-height: 1; letter-spacing: -0.5px; }
         .stat-label { font-size: 12px; color: var(--gray-500); margin-top: 4px; font-weight: 500; }
         .tasks-header { margin-bottom: 16px; }
-        .filter-tabs { display: flex; gap: 4px; background: var(--gray-100); padding: 4px; border-radius: 10px; width: fit-content; }
+        .filter-tabs { display: flex; gap: 4px; background: var(--gray-100); padding: 4px; border-radius: 10px; width: fit-content; max-width: 100%; overflow-x: auto; }
         .filter-tab {
           display: flex; align-items: center; gap: 6px; padding: 6px 14px;
           border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--gray-600);
@@ -289,6 +302,20 @@ export default function ModoGestor() {
         .task-desc {
           font-size: 13px; color: var(--gray-500); line-height: 1.5;
           display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .task-pause-reason {
+          margin-top: 8px;
+          font-size: 12px;
+          color: #92400e;
+          background: #fffbeb;
+          border: 1px solid #fde68a;
+          border-radius: 8px;
+          padding: 6px 8px;
+          line-height: 1.4;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
         }
         .task-dev-time {
           display: flex; align-items: center; gap: 6px; padding: 6px 10px;
@@ -328,11 +355,11 @@ export default function ModoGestor() {
         .bonif-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
 
         @media (max-width: 1100px) { .stats-grid { grid-template-columns: repeat(2, 1fr) !important; } }
-        @media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr !important; } .tasks-grid { grid-template-columns: 1fr; } .dashboard { padding: 20px 16px; } }
+        @media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr !important; } .tasks-grid { grid-template-columns: 1fr; } .dashboard { padding: 20px 16px; } .filter-tab { white-space: nowrap; } }
       `}</style>
 
       {/* ── header ── */}
-      <div className="dashboard-header">
+      <div className="dashboard-header" style={{ gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h1 className="dashboard-title">Modo Gestor</h1>
           <p className="dashboard-date">

@@ -18,6 +18,9 @@ const runMigrations = async () => {
       '004_create_notifications.sql',
       '005_create_task_user_timers.sql',
       '006_add_roles.sql',
+      '007_add_task_pause_reason.sql',
+      '008_create_refresh_tokens.sql',
+      '009_add_task_paused_notification_enum.sql',
     ];
     let sql = '';
     for (const file of migrationFiles) {

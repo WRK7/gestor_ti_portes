@@ -6,6 +6,7 @@ const ACTION_ICON = {
   criou:                 { icon: '＋', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
   editou:                { icon: '✎',  color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
   apagou:                { icon: '✕',  color: '#ef4444', bg: '#fef2f2', border: '#fecaca' },
+  pausou:                { icon: '⏸', color: '#6366f1', bg: '#eef2ff', border: '#c7d2fe' },
   concluiu:              { icon: '✔',  color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
   'enviou para bonificação': { icon: '$', color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
   'aprovou bonificação':     { icon: '✔', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
@@ -93,7 +94,8 @@ export default function Logs() {
     ? logs.filter(l =>
         (l.actor_name || '').toLowerCase().includes(search.toLowerCase()) ||
         (l.action     || '').toLowerCase().includes(search.toLowerCase()) ||
-        (l.entity_name|| '').toLowerCase().includes(search.toLowerCase())
+        (l.entity_name|| '').toLowerCase().includes(search.toLowerCase()) ||
+        (l.detail     || '').toLowerCase().includes(search.toLowerCase())
       )
     : logs;
 
@@ -109,11 +111,11 @@ export default function Logs() {
     <div className="dashboard">
       <style>{`
         .dashboard { padding: 28px 32px; width: 100%; }
-        .dashboard-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
+        .dashboard-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 28px; }
         .dashboard-title { font-size: 22px; font-weight: 700; color: var(--gray-900); letter-spacing: -0.3px; }
         .dashboard-date { font-size: 13px; color: var(--gray-400); margin-top: 2px; }
         .dashboard-header-actions { display: flex; gap: 8px; align-items: center; }
-        .filter-tabs { display: flex; gap: 4px; background: var(--gray-100); padding: 4px; border-radius: 10px; width: fit-content; }
+        .filter-tabs { display: flex; gap: 4px; background: var(--gray-100); padding: 4px; border-radius: 10px; width: fit-content; max-width: 100%; overflow-x: auto; }
         .filter-tab {
           display: flex; align-items: center; gap: 6px; padding: 6px 14px;
           border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--gray-600);
@@ -133,6 +135,16 @@ export default function Logs() {
         .tasks-loading { display: flex; align-items: center; gap: 10px; padding: 40px 0; color: var(--gray-400); font-size: 14px; }
         .empty-state { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 60px 20px; color: var(--gray-300); }
         .empty-state p { font-size: 14px; color: var(--gray-400); margin: 0; }
+        @media (max-width: 900px) {
+          .dashboard { padding: 20px 16px; }
+          .dashboard-header-actions { width: 100%; flex-wrap: wrap; }
+          .dashboard-header-actions .input { width: 100% !important; }
+          .log-table-wrap { overflow-x: auto; }
+          .log-table { min-width: 900px; }
+        }
+        @media (max-width: 700px) {
+          .filter-tab { white-space: nowrap; }
+        }
       `}</style>
 
       <div className="dashboard-header">
@@ -271,7 +283,10 @@ export default function Logs() {
                       <td style={{ fontSize: 13, color: 'var(--gray-700)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {log.entity_name || '—'}
                       </td>
-                      <td style={{ fontSize: 12, color: 'var(--gray-500)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <td
+                        title={log.detail || undefined}
+                        style={{ fontSize: 12, color: 'var(--gray-500)', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >
                         {log.detail || '—'}
                       </td>
                     </tr>

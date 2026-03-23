@@ -75,13 +75,6 @@ function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting
                 <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
               </svg>
             </button>
-          ) : project.bonificado && canBonify ? (
-            <button className="task-action-btn bonificado-btn" title="Reverter bonificação" onClick={() => onToggleBonificado(project)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="1" x2="12" y2="23"/>
-                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-              </svg>
-            </button>
           ) : project.bonificado ? (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: '#16a34a', padding: '3px 8px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 20 }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -184,7 +177,7 @@ function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting
 
 export default function Bonificacao() {
   const { user } = useAuth();
-  const { confirm, alert } = useDialog();
+  const { confirm } = useDialog();
   const isGestor = ['gestor', 'superadmin'].includes(user?.role);
   const isRH = user?.role === 'rh';
   const canBonify = isGestor;
@@ -195,7 +188,6 @@ export default function Bonificacao() {
 
   const [projects, setProjects] = useState([]);
   const [stats, setStats] = useState(null);
-  const [monthlyStats, setMonthlyStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -209,14 +201,12 @@ export default function Bonificacao() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [projRes, statsRes, monthlyRes] = await Promise.all([
+      const [projRes, statsRes] = await Promise.all([
         api.get('/projects', { params: { month: selMonth, year: selYear } }),
         api.get('/projects/stats'),
-        api.get('/projects/stats/monthly'),
       ]);
       setProjects(projRes.data);
       setStats(statsRes.data);
-      setMonthlyStats(monthlyRes.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -238,16 +228,8 @@ export default function Bonificacao() {
   };
 
   const handleToggleBonificado = (project) => {
-    if (!project.bonificado) {
-      setBonifModal(project);
-    } else {
-      api.patch(`/projects/${project.id}/bonificar`).then(fetchData).catch(async (err) => {
-        await alert(err.response?.data?.error || 'Erro ao reverter bonificação', {
-          title: 'Erro',
-          variant: 'error',
-        });
-      });
-    }
+    if (project.bonificado) return;
+    setBonifModal(project);
   };
 
   const handleBonifConfirm = async (projectId, approved_value) => {
@@ -423,10 +405,10 @@ export default function Bonificacao() {
 
       <style>{`
         .dashboard { padding: 28px 32px; width: 100%; }
-        .dashboard-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
+        .dashboard-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 28px; }
         .dashboard-title { font-size: 22px; font-weight: 700; color: var(--gray-900); letter-spacing: -0.3px; }
         .dashboard-date { font-size: 13px; color: var(--gray-400); margin-top: 2px; }
-        .dashboard-header-actions { display: flex; gap: 8px; align-items: center; }
+        .dashboard-header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
         .project-card {
           background: var(--white);
@@ -506,7 +488,7 @@ export default function Bonificacao() {
         .stat-label { font-size: 12px; color: var(--gray-500); margin-top: 4px; font-weight: 500; }
 
         .tasks-header { margin-bottom: 16px; }
-        .filter-tabs { display: flex; gap: 4px; background: var(--gray-100); padding: 4px; border-radius: 10px; width: fit-content; }
+        .filter-tabs { display: flex; gap: 4px; background: var(--gray-100); padding: 4px; border-radius: 10px; width: fit-content; max-width: 100%; overflow-x: auto; }
         .filter-tab { display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--gray-600); background: none; border: none; cursor: pointer; transition: all var(--transition); font-family: inherit; }
         .filter-tab:hover { color: var(--gray-900); }
         .filter-tab.active { background: var(--white); color: var(--gray-900); box-shadow: var(--shadow-sm); }
@@ -521,11 +503,8 @@ export default function Bonificacao() {
         .task-action-btn.fill-params-btn { background: var(--amber-50); color: var(--amber-600); border-color: var(--amber-100); }
         .task-action-btn.fill-params-btn:hover { background: var(--amber-100); color: var(--amber-600); border-color: var(--amber-500); }
         .task-action-btn.bonificar-btn:hover { background: var(--amber-50); color: var(--amber-600); border-color: var(--amber-100); }
-        .task-action-btn.bonificado-btn { background: var(--green-50); color: var(--green-600); border-color: var(--green-100); }
-        .task-action-btn.bonificado-btn:hover { background: var(--red-50); color: var(--red-600); border-color: var(--red-100); }
-
         @media (max-width: 1100px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
-        @media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr; } .tasks-grid { grid-template-columns: 1fr; } .dashboard { padding: 20px 16px; } }
+        @media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr; } .tasks-grid { grid-template-columns: 1fr; } .dashboard { padding: 20px 16px; } .filter-tab { white-space: nowrap; } }
       `}</style>
     </div>
   );

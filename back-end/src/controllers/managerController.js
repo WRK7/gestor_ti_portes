@@ -9,6 +9,16 @@ const pool = require('../config/database');
  */
 const getDashboard = async (req, res) => {
   try {
+    const managerTimeSql = `
+      COALESCE((
+        SELECT SUM(
+          tut.dev_seconds + GREATEST(COALESCE(TIMESTAMPDIFF(SECOND, tut.timer_started_at, NOW()), 0), 0)
+        )
+        FROM task_user_timers_ti tut
+        WHERE tut.task_id = t.id
+      ), 0)
+    `;
+
     // All non-completed tasks with assignees
     const [tasks] = await pool.query(`
       SELECT
@@ -16,18 +26,21 @@ const getDashboard = async (req, res) => {
         t.title,
         t.description,
         t.status,
+        t.pause_reason,
         t.priority,
         t.due_date,
         t.dev_seconds,
         t.timer_started_at,
-        t.dev_seconds + COALESCE(TIMESTAMPDIFF(SECOND, t.timer_started_at, NOW()), 0) AS current_dev_seconds,
+        ${managerTimeSql} AS current_dev_seconds,
         u.id   AS user_id,
         u.name AS user_name,
         u.username,
-        u.role AS user_role
+        u.role AS user_role,
+        tut.timer_started_at IS NOT NULL AS user_timer_active
       FROM tasks_ti t
       LEFT JOIN task_assignees_ti ta ON ta.task_id = t.id
       LEFT JOIN users u ON u.id = ta.user_id
+      LEFT JOIN task_user_timers_ti tut ON tut.task_id = ta.task_id AND tut.user_id = ta.user_id
       WHERE t.status IN ('pending', 'paused', 'overdue')
       ORDER BY t.due_date ASC, t.title ASC
     `);
@@ -63,6 +76,7 @@ const getDashboard = async (req, res) => {
             title: row.title,
             description: row.description,
             status: row.status,
+            pause_reason: row.pause_reason,
             priority: row.priority,
             due_date: row.due_date,
             dev_seconds: row.dev_seconds,
@@ -74,7 +88,13 @@ const getDashboard = async (req, res) => {
         if (row.user_id) {
           const t = map.get(row.id);
           if (!t.assignees.find(a => a.id === row.user_id)) {
-            t.assignees.push({ id: row.user_id, name: row.user_name, username: row.username, role: row.user_role });
+            t.assignees.push({
+              id: row.user_id,
+              name: row.user_name,
+              username: row.username,
+              role: row.user_role,
+              timer_active: !!row.user_timer_active,
+            });
           }
         }
       }

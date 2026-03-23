@@ -166,7 +166,7 @@ const TIMER_SUM_SQL = `
 const TASK_SELECT = `
   SELECT
     t.id, t.title, t.description, t.status, t.priority,
-    t.due_date, t.completed_at, t.dev_seconds, t.timer_started_at,
+    t.due_date, t.completed_at, t.dev_seconds, t.timer_started_at, t.pause_reason,
     t.created_at, t.updated_at,
     ${TIMER_SUM_SQL} AS current_dev_seconds,
     c.id AS category_id, c.name AS category_name, c.color AS category_color,
@@ -177,7 +177,7 @@ const TASK_SELECT = `
 const taskSelectForUser = (userId) => `
   SELECT
     t.id, t.title, t.description, t.status, t.priority,
-    t.due_date, t.completed_at, t.dev_seconds, t.timer_started_at,
+    t.due_date, t.completed_at, t.dev_seconds, t.timer_started_at, t.pause_reason,
     t.created_at, t.updated_at,
     ${TIMER_SUM_SQL} AS current_dev_seconds,
     COALESCE(my.dev_seconds, 0) + GREATEST(COALESCE(TIMESTAMPDIFF(SECOND, my.timer_started_at, NOW()), 0), 0) AS my_dev_seconds,
@@ -367,11 +367,15 @@ const updateTask = async (req, res) => {
         due_date    = COALESCE(?, due_date),
         priority    = COALESCE(?, priority),
         status      = COALESCE(?, status),
+        pause_reason = CASE
+          WHEN COALESCE(?, status) IN ('pending', 'completed', 'overdue') THEN NULL
+          ELSE pause_reason
+        END,
         category_id = COALESCE(?, category_id),
         completed_at = ${completedAtExpr},
         updated_at  = NOW()
       WHERE id = ?`,
-      [title, description, toMysqlDate(due_date), priority, status, category_id, id]
+      [title, description, toMysqlDate(due_date), priority, status, status, category_id, id]
     );
 
     if (assignees !== undefined) {
@@ -397,10 +401,16 @@ const updateTask = async (req, res) => {
 const pauseTask = async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
+  const reason = (req.body?.reason || '').trim();
   const conn = await pool.getConnection();
 
   try {
-    const [rows] = await conn.query('SELECT id, status FROM tasks_ti WHERE id = ?', [id]);
+    if (!reason) {
+      conn.release();
+      return res.status(400).json({ error: 'Informe o motivo da pausa' });
+    }
+
+    const [rows] = await conn.query('SELECT id, status, title FROM tasks_ti WHERE id = ?', [id]);
     if (rows.length === 0) { conn.release(); return res.status(404).json({ error: 'Tarefa não encontrada' }); }
     if (rows[0].status === 'completed') { conn.release(); return res.status(400).json({ error: 'Tarefa já concluída' }); }
 
@@ -427,6 +437,14 @@ const pauseTask = async (req, res) => {
     // Recalcula status da tarefa
     await recalcTaskStatus(conn, parseInt(id));
 
+    await conn.query(
+      `UPDATE tasks_ti
+       SET pause_reason = CASE WHEN status = 'paused' THEN ? ELSE pause_reason END,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [reason, id]
+    );
+
     await conn.commit();
 
     const [updated] = await pool.query(
@@ -434,6 +452,30 @@ const pauseTask = async (req, res) => {
       [id, userId]
     );
     console.log(`⏸️  Task ${id} pausada por user ${userId} — dev_seconds: ${updated[0]?.dev_seconds}s`);
+
+    await record(
+      req.user,
+      'pausou',
+      'tarefa',
+      parseInt(id, 10),
+      rows[0].title,
+      `Motivo: ${reason}`
+    );
+
+    const [assigneeRows] = await pool.query(
+      'SELECT user_id FROM task_assignees_ti WHERE task_id = ?',
+      [id]
+    );
+    const assigneeIds = assigneeRows.map((r) => r.user_id);
+    const actorName = req.user.name || req.user.username || 'Alguém';
+    await notifyMultiple(
+      assigneeIds,
+      'task_paused',
+      'Tarefa pausada',
+      `A tarefa "${rows[0].title}" foi pausada por ${actorName}. Motivo: ${reason}`,
+      '/dashboard',
+      userId
+    );
 
     return res.json({ message: 'Timer pausado' });
   } catch (err) {
@@ -481,7 +523,9 @@ const resumeTask = async (req, res) => {
 
     // Tarefa passa a ter pelo menos 1 timer ativo → status = pending
     await conn.query(
-      `UPDATE tasks_ti SET status = 'pending', updated_at = NOW() WHERE id = ? AND status != 'completed'`,
+      `UPDATE tasks_ti
+       SET status = 'pending', pause_reason = NULL, updated_at = NOW()
+       WHERE id = ? AND status != 'completed'`,
       [id]
     );
 
@@ -535,6 +579,7 @@ const completeTask = async (req, res) => {
         status = 'completed',
         completed_at = NOW(),
         dev_seconds = ?,
+        pause_reason = NULL,
         timer_started_at = NULL,
         updated_at = NOW()
       WHERE id = ?`,

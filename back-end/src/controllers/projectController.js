@@ -300,47 +300,46 @@ const toggleBonificado = async (req, res) => {
       return res.status(400).json({ error: 'Preencha os parâmetros do projeto antes de bonificar' });
     }
 
-    const newVal = existing[0].bonificado ? 0 : 1;
-    const finalValue = newVal
-      ? (approved_value != null ? Number(approved_value) : existing[0].suggested_value)
-      : null;
+    if (existing[0].bonificado) {
+      return res.status(400).json({ error: 'Este projeto já foi bonificado e não pode ser revertido' });
+    }
+
+    const finalValue = approved_value != null ? Number(approved_value) : existing[0].suggested_value;
 
     await pool.query(
       `UPDATE projects_ti SET
-        bonificado      = ?,
+        bonificado      = 1,
         approved_value  = ?,
-        bonificado_at   = ${newVal ? 'NOW()' : 'NULL'},
-        bonificado_by   = ${newVal ? '?' : 'NULL'},
+        bonificado_at   = NOW(),
+        bonificado_by   = ?,
         updated_at      = NOW()
       WHERE id = ?`,
-      newVal ? [newVal, finalValue, req.user.id, id] : [newVal, null, id]
+      [finalValue, req.user.id, id]
     );
 
-    const action = newVal ? 'aprovou bonificação' : 'reverteu bonificação';
-    const detail = newVal && finalValue != null ? `Valor aprovado: R$ ${finalValue}` : null;
+    const action = 'aprovou bonificação';
+    const detail = finalValue != null ? `Valor aprovado: R$ ${finalValue}` : null;
     await record(req.user, action, 'bonificacao', Number(id), existing[0].name, detail);
 
-    if (newVal) {
-      const [proj] = await pool.query('SELECT responsible_id, source_task_id FROM projects_ti WHERE id = ?', [id]);
-      const notifUsers = [];
-      if (proj[0]?.responsible_id) notifUsers.push(proj[0].responsible_id);
-      if (proj[0]?.source_task_id) {
-        const [tas] = await pool.query(
-          'SELECT user_id FROM task_assignees_ti WHERE task_id = ?', [proj[0].source_task_id]
-        );
-        tas.forEach(t => notifUsers.push(t.user_id));
-      }
-      const fmtVal = finalValue != null
-        ? Number(finalValue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-        : '';
-      await notifyMultiple(
-        notifUsers.filter(uid => uid !== req.user.id),
-        'bonif_approved',
-        'Bonificação aprovada!',
-        `O projeto "${existing[0].name}" foi aprovado${fmtVal ? ` com valor de ${fmtVal}` : ''}.`,
-        '/billing'
+    const [proj] = await pool.query('SELECT responsible_id, source_task_id FROM projects_ti WHERE id = ?', [id]);
+    const notifUsers = [];
+    if (proj[0]?.responsible_id) notifUsers.push(proj[0].responsible_id);
+    if (proj[0]?.source_task_id) {
+      const [tas] = await pool.query(
+        'SELECT user_id FROM task_assignees_ti WHERE task_id = ?', [proj[0].source_task_id]
       );
+      tas.forEach(t => notifUsers.push(t.user_id));
     }
+    const fmtVal = finalValue != null
+      ? Number(finalValue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+      : '';
+    await notifyMultiple(
+      notifUsers.filter(uid => uid !== req.user.id),
+      'bonif_approved',
+      'Bonificação aprovada!',
+      `O projeto "${existing[0].name}" foi aprovado${fmtVal ? ` com valor de ${fmtVal}` : ''}.`,
+      '/billing'
+    );
 
     const [rows] = await pool.query(`${projectSelect} WHERE p.id = ?`, [id]);
     return res.json(rows[0]);

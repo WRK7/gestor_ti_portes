@@ -1,6 +1,8 @@
 const express = require('express');
+const { body, param, query } = require('express-validator');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth');
+const { handleValidation } = require('../middleware/validate');
 const {
   getTodayStats,
   getAllTasks,
@@ -25,12 +27,46 @@ router.get('/stats/today', getTodayStats);
 router.get('/categories', getCategories);
 router.get('/users', getUsers);
 
-router.get('/', getAllTasks);
-router.post('/', denyRH, createTask);
-router.put('/:id', denyRH, updateTask);
-router.patch('/:id/complete', denyRH, completeTask);
-router.patch('/:id/pause', denyRH, pauseTask);
-router.patch('/:id/resume', denyRH, resumeTask);
-router.delete('/:id', denyRH, deleteTask);
+const taskStatuses = ['pending', 'paused', 'overdue', 'completed'];
+
+router.get(
+  '/',
+  [
+    query('date').optional({ checkFalsy: true }).isISO8601(),
+    query('status').optional().isIn(taskStatuses),
+  ],
+  handleValidation,
+  getAllTasks
+);
+router.post(
+  '/',
+  denyRH,
+  [
+    body('title').trim().isLength({ min: 1, max: 500 }),
+    body('due_date').notEmpty(),
+    body('assignees').isArray({ min: 1 }),
+    body('priority').optional().isIn(['low', 'medium', 'high', 'critical']),
+    body('category_id').optional().isInt({ min: 1 }),
+  ],
+  handleValidation,
+  createTask
+);
+router.put(
+  '/:id',
+  denyRH,
+  [
+    param('id').isInt({ min: 1 }),
+    body('title').optional().trim().isLength({ min: 1, max: 500 }),
+    body('status').optional().isIn(taskStatuses),
+    body('priority').optional().isIn(['low', 'medium', 'high', 'critical']),
+    body('category_id').optional().isInt({ min: 1 }),
+  ],
+  handleValidation,
+  updateTask
+);
+router.patch('/:id/complete', denyRH, [param('id').isInt({ min: 1 })], handleValidation, completeTask);
+router.patch('/:id/pause', denyRH, [param('id').isInt({ min: 1 })], handleValidation, pauseTask);
+router.patch('/:id/resume', denyRH, [param('id').isInt({ min: 1 })], handleValidation, resumeTask);
+router.delete('/:id', denyRH, [param('id').isInt({ min: 1 })], handleValidation, deleteTask);
 
 module.exports = router;
