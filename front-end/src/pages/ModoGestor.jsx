@@ -35,8 +35,6 @@ const BONIF_STATUS = {
   approved: { label: 'Bonificado',            color: 'var(--green-600)', bg: 'var(--green-50)', border: 'var(--green-200)' },
 };
 
-const DIFF_LABEL = { baixa: 'Baixa', media: 'Média', alta: 'Alta', critica: 'Crítica' };
-
 /* ─── sub-components ────────────────────────────────────────────── */
 function UserAvatar({ name, username }) {
   const initials = (name || username || '?')
@@ -172,11 +170,6 @@ function BonifProjectCard({ project, statusKey }) {
             {project.resp_name}
           </span>
         )}
-        {project.difficulty && (
-          <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-500)', background: 'var(--gray-100)', borderRadius: 6, padding: '1px 6px' }}>
-            {DIFF_LABEL[project.difficulty]}
-          </span>
-        )}
         {project.dev_seconds > 0 && (
           <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>⏱ {formatDevTime(project.dev_seconds)}</span>
         )}
@@ -214,7 +207,7 @@ const TABS = [
 
 const BONIF_TABS = [
   { key: 'bonif_awaiting', label: 'Aguardando', statusKey: 'awaiting', emptyMsg: 'Nenhum projeto aguardando parâmetros' },
-  { key: 'bonif_pending',  label: 'Prontos p/ aprovar', statusKey: 'pending',  emptyMsg: 'Nenhum projeto pronto para aprovar' },
+  { key: 'bonif_pending',  label: 'Em negociação', statusKey: 'pending',  emptyMsg: 'Nenhum projeto em negociação' },
   { key: 'bonif_approved', label: 'Bonificados', statusKey: 'approved', emptyMsg: 'Nenhuma bonificação aprovada' },
 ];
 
@@ -477,7 +470,7 @@ export default function ModoGestor() {
               icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
             />
             <StatCard
-              label="Prontos p/ aprovar" value={data.bonif_pending?.length ?? 0}
+              label="Em negociação" value={data.bonif_pending?.length ?? 0}
               color="#2563eb" bg="#eff6ff"
               icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>}
             />

@@ -22,10 +22,9 @@ const SECTIONS = [
     icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
     steps: [
       'Projetos enviados do Dashboard aparecem com status "Aguardando parâmetros".',
-      'Clique em "Preencher Parâmetros" para informar: o que o projeto entrega, taxa R$/h, dificuldade e valor sugerido.',
-      'O sistema calcula automaticamente: horas × taxa × multiplicador de dificuldade = valor sugerido.',
-      'Você pode ajustar o valor manualmente — o cálculo é apenas uma referência.',
-      'Após preenchimento, o projeto fica disponível para o Gestor aprovar.',
+      'Clique em "Preencher Parâmetros" para informar o que o projeto entrega, retorno financeiro e o valor sugerido. O tempo de desenvolvimento continua sendo exibido.',
+      'O gestor pode aceitar seu valor ou enviar uma contraproposta; você pode aceitar a proposta do gestor ou sugerir outro valor, até fecharem o valor.',
+      'O gestor define o parcelamento (até 12x) ao aceitar sua sugestão ou ao enviar uma contraproposta.',
     ],
   },
   {
@@ -36,7 +35,7 @@ const SECTIONS = [
     steps: [
       'Relatório mensal de todas as bonificações aprovadas.',
       'Filtre por mês, ano e responsável.',
-      'Cada card mostra: projeto, colaboradores, composição do valor (taxa × horas × dificuldade) e quem aprovou.',
+      'Cada card mostra: projeto, colaboradores, tempo de desenvolvimento, valores e parcelamento quando houver.',
       'Use o botão "Imprimir" para gerar um PDF limpo, sem o menu lateral.',
     ],
   },
@@ -62,7 +61,7 @@ const GESTOR_SECTION = {
   steps: [
     'Visão consolidada de todas as tarefas de todos os membros do time.',
     'Acompanhe quem está trabalhando em quê, tempos de desenvolvimento e atrasos.',
-    'Na tela de Bonificação, o botão "Bonificar" aparece para aprovar ou definir outro valor.',
+    'Na tela de Bonificação, o gestor negocia o valor com o time e pode parcelar o total em até 12 vezes.',
     'Acesse os Logs para auditoria completa de ações no sistema.',
   ],
 };

@@ -21,6 +21,8 @@ const runMigrations = async () => {
       '007_add_task_pause_reason.sql',
       '008_create_refresh_tokens.sql',
       '009_add_task_paused_notification_enum.sql',
+      '010_bonif_negotiation.sql',
+      '011_project_bonif_participants.sql',
     ];
     let sql = '';
     for (const file of migrationFiles) {

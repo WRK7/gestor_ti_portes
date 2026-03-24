@@ -15,32 +15,31 @@ const fmtHours = (secs) => {
   return `${h}h ${m}min`;
 };
 
-export default function BonifModal({ project, participant, onClose, onConfirm }) {
-  const [mode, setMode]   = useState(null);
+export default function DevNegotiationModal({ project, participant, onClose, onConfirm }) {
+  const [mode, setMode] = useState(null);
   const [value, setValue] = useState('');
-  const [installments, setInstallments] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
+  const [error, setError] = useState('');
 
   const ctx = participant || project;
   const partPayload = participant?.id ? { participant_id: participant.id } : {};
 
+  const inst = Math.min(
+    12,
+    Math.max(1, parseInt(ctx.gestor_offer_installments ?? 1, 10) || 1)
+  );
+  const gv = ctx.gestor_offer_value != null ? Number(ctx.gestor_offer_value) : null;
+  const parcela = gv != null && inst > 1 ? gv / inst : null;
+
   const handleConfirm = async () => {
     setError('');
-    const inst = Math.min(12, Math.max(1, parseInt(installments, 10) || 1));
-
     if (mode === 'accept') {
-      const sv = ctx.suggested_value != null ? Number(ctx.suggested_value) : null;
-      if (sv == null || Number.isNaN(sv) || sv <= 0) {
-        setError('Não há valor sugerido pelo time para aprovar');
-        return;
-      }
       setLoading(true);
       try {
-        await onConfirm(project.id, { action: 'gestor_accept_dev', installment_count: inst, ...partPayload });
+        await onConfirm(project.id, { action: 'dev_accept', ...partPayload });
         onClose();
       } catch (err) {
-        setError(err?.response?.data?.error || 'Erro ao aprovar bonificação');
+        setError(err?.response?.data?.error || 'Erro ao confirmar');
       } finally {
         setLoading(false);
       }
@@ -54,12 +53,7 @@ export default function BonifModal({ project, participant, onClose, onConfirm })
     }
     setLoading(true);
     try {
-      await onConfirm(project.id, {
-        action: 'gestor_propose',
-        approved_value: Number(raw),
-        installment_count: inst,
-        ...partPayload,
-      });
+      await onConfirm(project.id, { action: 'dev_counter', approved_value: Number(raw), ...partPayload });
       onClose();
     } catch (err) {
       setError(err?.response?.data?.error || 'Erro ao enviar contraproposta');
@@ -80,13 +74,13 @@ export default function BonifModal({ project, participant, onClose, onConfirm })
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-900)', margin: 0, marginBottom: 4 }}>
-              Aprovar Bonificação
+              Proposta do gestor
             </h2>
             <p style={{ fontSize: 13, color: 'var(--gray-500)', margin: 0, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {project.name}{participant?.member_name ? ` — ${participant.member_name}` : ''}
             </p>
           </div>
-          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', padding: 4 }}>
+          <button onClick={onClose} type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', padding: 4 }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
@@ -97,43 +91,23 @@ export default function BonifModal({ project, participant, onClose, onConfirm })
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
             Contexto
           </div>
-          {(ctx.dev_seconds > 0) && (
-            <div style={{ fontSize: 12, color: 'var(--gray-600)', marginBottom: 10 }}>
+          {ctx.dev_seconds > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--gray-600)', marginBottom: 8 }}>
               Tempo de desenvolvimento: <strong>{fmtHours(ctx.dev_seconds)}</strong>
             </div>
           )}
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-            Valor sugerido pelo time
+          <div style={{ fontSize: 12, color: 'var(--gray-600)', marginBottom: 8 }}>
+            Sua última sugestão: <strong>{fmtMoney(ctx.suggested_value)}</strong>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: ctx.suggested_value ? 'var(--green-600)' : 'var(--gray-400)' }}>
-            {fmtMoney(ctx.suggested_value)}
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--blue-600)' }}>
+            {fmtMoney(gv)}
           </div>
-          {ctx.financial_return && (
-            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>
-              Retorno: {ctx.financial_return}
+          {inst > 1 && parcela != null && (
+            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 8 }}>
+              Parcelamento proposto pelo gestor: <strong>{inst}x</strong> de{' '}
+              <strong>{fmtMoney(parcela)}</strong>
             </div>
           )}
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <label className="input-label" style={{ display: 'block', marginBottom: 6 }}>
-            Parcelamento (valor total)
-          </label>
-          <select
-            className="input"
-            value={installments}
-            onChange={e => setInstallments(Number(e.target.value))}
-            style={{ width: '100%' }}
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
-              <option key={n} value={n}>
-                {n === 1 ? 'À vista (1x)' : `Em ${n} parcelas`}
-              </option>
-            ))}
-          </select>
-          <p style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>
-            Aplica ao aceitar a sugestão ou ao enviar sua contraproposta.
-          </p>
         </div>
 
         {mode === null && (
@@ -148,28 +122,28 @@ export default function BonifModal({ project, participant, onClose, onConfirm })
               }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              Aceitar valor sugerido
-              {ctx.suggested_value && <span style={{ marginLeft: 'auto', fontWeight: 700 }}>{fmtMoney(ctx.suggested_value)}</span>}
+              Aceitar proposta do gestor
+              {gv != null && <span style={{ marginLeft: 'auto', fontWeight: 700 }}>{fmtMoney(gv)}</span>}
             </button>
             <button
               type="button"
-              onClick={() => setMode('custom')}
+              onClick={() => setMode('counter')}
               style={{
-                padding: '14px 16px', borderRadius: 10, border: '1px solid var(--blue-100)',
-                background: 'var(--blue-50)', color: 'var(--blue-600)', fontWeight: 600, fontSize: 14,
+                padding: '14px 16px', borderRadius: 10, border: '1px solid var(--amber-100)',
+                background: 'var(--amber-50)', color: 'var(--amber-700)', fontWeight: 600, fontSize: 14,
                 cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10,
               }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-              Enviar outro valor ao time
+              Solicitar outro valor
             </button>
           </div>
         )}
 
-        {mode === 'custom' && (
+        {mode === 'counter' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div className="input-group">
-              <label className="input-label">Valor aprovado (R$)</label>
+              <label className="input-label">Nova sugestão de valor (R$)</label>
               <input
                 className="input"
                 type="text"
@@ -183,7 +157,7 @@ export default function BonifModal({ project, participant, onClose, onConfirm })
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setMode(null); setError(''); }}>Voltar</button>
               <button type="button" className="btn btn-primary" onClick={handleConfirm} disabled={loading} style={{ flex: 1 }}>
-                {loading ? 'Enviando…' : 'Enviar contraproposta'}
+                {loading ? 'Enviando…' : 'Enviar ao gestor'}
               </button>
             </div>
           </div>
@@ -195,7 +169,7 @@ export default function BonifModal({ project, participant, onClose, onConfirm })
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setMode(null); setError(''); }}>Voltar</button>
               <button type="button" className="btn btn-primary" onClick={handleConfirm} disabled={loading} style={{ flex: 1 }}>
-                {loading ? 'Aprovando…' : `Confirmar — ${fmtMoney(ctx.suggested_value)}`}
+                {loading ? 'Confirmando…' : `Confirmar aceite — ${fmtMoney(gv)}`}
               </button>
             </div>
           </div>

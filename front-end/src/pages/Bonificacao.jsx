@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import ProjectModal from '../components/ProjectModal';
 import BonifModal from '../components/BonifModal';
+import DevNegotiationModal from '../components/DevNegotiationModal';
 import CalendarModal from '../components/CalendarModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useDialog } from '../contexts/DialogContext';
@@ -45,34 +46,205 @@ function StatCard({ label, value, icon, color, bg }) {
   );
 }
 
-function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting, canBonify, readOnly }) {
+function bonifStatusLabel(project, isAwaiting) {
+  if (isAwaiting) return { text: 'Aguardando parâmetros', color: '#d97706', dot: '#f59e0b' };
+  if (project.bonificado) return { text: 'Bonificado', color: '#16a34a', dot: '#22c55e' };
+  if (project.bonif_pending_response === 'dev') return { text: 'Aguardando dev', color: '#7c3aed', dot: '#8b5cf6' };
+  return { text: 'Aguardando gestor', color: '#2563eb', dot: '#3b82f6' };
+}
+
+function participantStatus(bp) {
+  if (bp.awaiting_params) return { text: 'Aguardando parâmetros', color: '#d97706', dot: '#f59e0b' };
+  if (bp.bonificado) return { text: 'Bonificado', color: '#16a34a', dot: '#22c55e' };
+  if (bp.bonif_pending_response === 'dev') return { text: 'Aguardando dev', color: '#7c3aed', dot: '#8b5cf6' };
+  return { text: 'Aguardando gestor', color: '#2563eb', dot: '#3b82f6' };
+}
+
+function ProjectCard({
+  project,
+  currentUserId,
+  onEdit,
+  onDelete,
+  onToggleBonificado,
+  onDevRespond,
+  isAwaiting,
+  canBonify,
+  canRespondDev,
+  canEditProject,
+  canDeleteProject,
+  canFillSingleParams,
+  readOnly,
+}) {
+  const parts = project.bonif_participants || [];
+  const multi = project.collaborative && parts.length > 1;
+
+  if (multi) {
+    const stAgg = bonifStatusLabel(project, isAwaiting);
+    return (
+      <div className="project-card" style={{ '--card-border': isAwaiting ? '#fde68a' : project.bonificado ? '#bbf7d0' : 'var(--gray-200)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className="project-status-dot" style={{ background: stAgg.dot }} />
+            <span style={{ fontSize: 11, fontWeight: 600, color: stAgg.color }}>{stAgg.text}</span>
+            <span style={{ fontSize: 10, fontWeight: 600, color: '#4338ca', background: '#eef2ff', padding: '2px 8px', borderRadius: 6 }}>Colaborativo</span>
+          </div>
+          {!readOnly && (canEditProject || canDeleteProject) && (
+            <div style={{ display: 'flex', gap: 4 }}>
+              {canEditProject && (
+                <button className="task-action-btn" title="Editar projeto" type="button" onClick={() => onEdit(project)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+              )}
+              {canDeleteProject && (
+                <button className="task-action-btn red" title="Remover" type="button" onClick={() => onDelete(project.id)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                  </svg>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <h3 className="project-title">{project.name}</h3>
+        {!canBonify && !readOnly && !isAwaiting && !project.bonificado && (
+          <p style={{ fontSize: 11, color: 'var(--gray-400)', margin: '0 0 10px', lineHeight: 1.45 }}>
+            Para <strong>aprovar ou negociar</strong> bonificação, entre como <strong>gestor</strong>, <strong>admin</strong> ou <strong>superadmin</strong>. Com dev/suporte você só acompanha.
+          </p>
+        )}
+        {project.description && <p className="project-desc">{project.description}</p>}
+        {project.link && (
+          <div style={{ fontSize: 12, marginBottom: 8 }}>
+            <a href={project.link} target="_blank" rel="noreferrer" style={{ color: 'var(--blue-600)' }} onClick={e => e.stopPropagation()}>Link do projeto</a>
+          </div>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {parts.map((bp) => {
+            const st = participantStatus(bp);
+            const showFill = !readOnly && Boolean(bp.awaiting_params) && bp.user_id === currentUserId;
+            const showGestor = !readOnly && canBonify && !Boolean(bp.awaiting_params) && !Boolean(bp.bonificado) && bp.bonif_pending_response !== 'dev';
+            const showDev = !readOnly && bp.user_id === currentUserId && bp.bonif_pending_response === 'dev' && !isAwaiting;
+            return (
+              <div
+                key={bp.id}
+                style={{
+                  border: '1px solid var(--gray-200)',
+                  borderRadius: 10,
+                  padding: 12,
+                  background: 'var(--gray-50)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-900)' }}>{bp.member_name || `Usuário #${bp.user_id}`}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className="project-status-dot" style={{ background: st.dot }} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: st.color }}>{st.text}</span>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gap: 4, fontSize: 12, color: 'var(--gray-600)', marginBottom: 8 }}>
+                  <div>
+                    Tempo dev: <strong>{formatDevTime(bp.dev_seconds)}</strong>
+                  </div>
+                  <div>
+                    Sugestão:{' '}
+                    <strong style={{ color: 'var(--blue-600)' }}>
+                      {fmtMoney(bp.suggested_value ?? 0)}
+                    </strong>
+                  </div>
+                  <div>
+                    Bonificação:{' '}
+                    <strong style={{ color: bp.bonificado ? 'var(--green-600)' : 'var(--gray-700)' }}>
+                      {fmtMoney(bp.approved_value ?? 0)}
+                    </strong>
+                  </div>
+                </div>
+                {!readOnly && (
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {showFill && (
+                      <button type="button" className="task-action-btn fill-params-btn" title="Preencher seus parâmetros" onClick={() => onEdit(project)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                      </button>
+                    )}
+                    {showGestor && (
+                      <button type="button" className="task-action-btn bonificar-btn" title="Bonificar este membro" onClick={() => onToggleBonificado(project, bp)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="12" y1="1" x2="12" y2="23"/>
+                          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                      </button>
+                    )}
+                    {showDev && (
+                      <button type="button" className="task-action-btn dev-bonif-btn" title="Responder gestor" onClick={() => onDevRespond(project, bp)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                      </button>
+                    )}
+                    {Boolean(bp.bonificado) && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: '#16a34a', padding: '3px 8px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 20 }}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        OK
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  const st = bonifStatusLabel(project, isAwaiting);
+  const pending = project.bonif_pending_response || 'gestor';
+  const showGestorBonif = !isAwaiting && !project.bonificado && canBonify && pending === 'gestor';
+  const showDevRespond = !isAwaiting && !project.bonificado && canRespondDev;
+  const showBonifRoleHint =
+    !canBonify &&
+    !readOnly &&
+    !isAwaiting &&
+    !project.bonificado &&
+    pending === 'gestor';
+
   return (
     <div className="project-card" style={{ '--card-border': isAwaiting ? '#fde68a' : project.bonificado ? '#bbf7d0' : 'var(--gray-200)' }}>
-      {/* Topo: status badge + botões de ação */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span className="project-status-dot" style={{
-            background: isAwaiting ? '#f59e0b' : project.bonificado ? '#22c55e' : '#3b82f6'
+            background: st.dot
           }} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: isAwaiting ? '#d97706' : project.bonificado ? '#16a34a' : '#2563eb' }}>
-            {isAwaiting ? 'Aguardando parâmetros' : project.bonificado ? 'Bonificado' : 'Pendente'}
+          <span style={{ fontSize: 11, fontWeight: 600, color: st.color }}>
+            {st.text}
           </span>
         </div>
 
         {!readOnly && (
         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          {isAwaiting ? (
-            <button className="task-action-btn fill-params-btn" title="Preencher parâmetros" onClick={() => onEdit(project)}>
+          {isAwaiting && canFillSingleParams ? (
+            <button className="task-action-btn fill-params-btn" title="Preencher parâmetros" type="button" onClick={() => onEdit(project)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
               </svg>
             </button>
-          ) : !project.bonificado && canBonify ? (
-            <button className="task-action-btn bonificar-btn" title="Aprovar bonificação" onClick={() => onToggleBonificado(project)}>
+          ) : !isAwaiting && showGestorBonif ? (
+            <button className="task-action-btn bonificar-btn" title="Aprovar ou negociar bonificação" type="button" onClick={() => onToggleBonificado(project)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="1" x2="12" y2="23"/>
                 <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+              </svg>
+            </button>
+          ) : !isAwaiting && showDevRespond ? (
+            <button className="task-action-btn dev-bonif-btn" title="Responder proposta do gestor" type="button" onClick={() => onDevRespond(project)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
               </svg>
             </button>
           ) : project.bonificado ? (
@@ -81,33 +253,38 @@ function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting
               Bonificado
             </span>
           ) : null}
-          {!isAwaiting && (
-            <button className="task-action-btn" title="Editar" onClick={() => onEdit(project)}>
+          {!isAwaiting && canEditProject && (
+            <button className="task-action-btn" title="Editar" type="button" onClick={() => onEdit(project)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
               </svg>
             </button>
           )}
-          <button className="task-action-btn red" title="Remover" onClick={() => onDelete(project.id)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-            </svg>
-          </button>
+          {canDeleteProject && (
+            <button className="task-action-btn red" title="Remover" type="button" onClick={() => onDelete(project.id)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+              </svg>
+            </button>
+          )}
         </div>
         )}
       </div>
 
-      {/* Título — linha própria, sem concorrer com botões */}
       <h3 className="project-title">{project.name}</h3>
 
-      {/* Descrição */}
+      {showBonifRoleHint && (
+        <p style={{ fontSize: 11, color: 'var(--gray-400)', margin: '0 0 10px', lineHeight: 1.45 }}>
+          Para <strong>aprovar ou negociar</strong> bonificação, entre como <strong>gestor</strong>, <strong>admin</strong> ou <strong>superadmin</strong>. Com dev/suporte você só acompanha.
+        </p>
+      )}
+
       {project.description && (
         <p className="project-desc">{project.description}</p>
       )}
 
-      {/* Dev time */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--gray-500)' }}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
@@ -116,7 +293,6 @@ function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting
         <span style={{ fontWeight: 600, color: 'var(--gray-700)' }}>{formatDevTime(project.dev_seconds)}</span>
       </div>
 
-      {/* Métricas (only if params filled) */}
       {!isAwaiting && (
         <div className="project-metrics">
           <div className="project-metric">
@@ -159,7 +335,6 @@ function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting
         </div>
       )}
 
-      {/* Footer */}
       <div className="project-card-footer">
         {project.responsible_name && (
           <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--gray-500)' }}>
@@ -178,9 +353,16 @@ function ProjectCard({ project, onEdit, onDelete, onToggleBonificado, isAwaiting
 export default function Bonificacao() {
   const { user } = useAuth();
   const { confirm } = useDialog();
-  const isGestor = ['gestor', 'superadmin'].includes(user?.role);
   const isRH = user?.role === 'rh';
-  const canBonify = isGestor;
+  const canEditProjectMeta = ['admin', 'superadmin'].includes(user?.role);
+  const canDeleteProjectMeta = ['admin', 'superadmin'].includes(user?.role);
+  /** Aprovar / negociar bonificação: gestor, admin ou superadmin (não dev/suporte/rh). */
+  const canBonify = ['gestor', 'admin', 'superadmin'].includes(user?.role);
+
+  const canRespondDev = (p) =>
+    !!p.user_can_negotiate &&
+    p.bonif_pending_response === 'dev' &&
+    !isRH;
 
   const now = new Date();
   const [selMonth, setSelMonth] = useState(now.getMonth() + 1); // 1-12
@@ -195,8 +377,8 @@ export default function Bonificacao() {
   const [filter, setFilter] = useState('awaiting');
   const [calendarOpen, setCalendarOpen] = useState(false);
 
-  // bonif approval modal
-  const [bonifModal, setBonifModal] = useState(null); // project object
+  const [bonifModal, setBonifModal] = useState(null);
+  const [devNegotiationModal, setDevNegotiationModal] = useState(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -227,13 +409,13 @@ export default function Bonificacao() {
     try { await api.delete(`/projects/${id}`); fetchData(); } catch (err) { console.error(err); }
   };
 
-  const handleToggleBonificado = (project) => {
+  const handleToggleBonificado = (project, participant) => {
     if (project.bonificado) return;
-    setBonifModal(project);
+    setBonifModal({ project, participant: participant || null });
   };
 
-  const handleBonifConfirm = async (projectId, approved_value) => {
-    await api.patch(`/projects/${projectId}/bonificar`, { approved_value });
+  const handleBonifConfirm = async (projectId, payload) => {
+    await api.patch(`/projects/${projectId}/bonificar`, payload);
     fetchData();
   };
 
@@ -367,11 +549,23 @@ export default function Bonificacao() {
               <ProjectCard
                 key={p.id}
                 project={p}
+                currentUserId={user?.id}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
                 onToggleBonificado={handleToggleBonificado}
+                onDevRespond={(proj, part) => setDevNegotiationModal({ project: proj, participant: part || null })}
                 isAwaiting={!!p.awaiting_params}
                 canBonify={canBonify}
+                canRespondDev={canRespondDev(p)}
+                canEditProject={canEditProjectMeta}
+                canDeleteProject={canDeleteProjectMeta}
+                canFillSingleParams={
+                  !isRH && (
+                    canEditProjectMeta ||
+                    Number(p.responsible_id) === Number(user?.id) ||
+                    Number(p.created_by) === Number(user?.id)
+                  )
+                }
                 readOnly={isRH}
               />
             ))}
@@ -397,8 +591,18 @@ export default function Bonificacao() {
 
       {bonifModal && (
         <BonifModal
-          project={bonifModal}
+          project={bonifModal.project}
+          participant={bonifModal.participant || undefined}
           onClose={() => setBonifModal(null)}
+          onConfirm={handleBonifConfirm}
+        />
+      )}
+
+      {devNegotiationModal && (
+        <DevNegotiationModal
+          project={devNegotiationModal.project}
+          participant={devNegotiationModal.participant || undefined}
+          onClose={() => setDevNegotiationModal(null)}
           onConfirm={handleBonifConfirm}
         />
       )}
@@ -503,6 +707,8 @@ export default function Bonificacao() {
         .task-action-btn.fill-params-btn { background: var(--amber-50); color: var(--amber-600); border-color: var(--amber-100); }
         .task-action-btn.fill-params-btn:hover { background: var(--amber-100); color: var(--amber-600); border-color: var(--amber-500); }
         .task-action-btn.bonificar-btn:hover { background: var(--amber-50); color: var(--amber-600); border-color: var(--amber-100); }
+        .task-action-btn.dev-bonif-btn { background: var(--violet-50, #f5f3ff); color: var(--violet-600, #7c3aed); border-color: #ddd6fe; }
+        .task-action-btn.dev-bonif-btn:hover { background: #ede9fe; color: #6d28d9; border-color: #c4b5fd; }
         @media (max-width: 1100px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr; } .tasks-grid { grid-template-columns: 1fr; } .dashboard { padding: 20px 16px; } .filter-tab { white-space: nowrap; } }
       `}</style>

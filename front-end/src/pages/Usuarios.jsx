@@ -34,14 +34,17 @@ function UserModal({ user, onClose, onSave, currentUserRole, currentUserId }) {
   const isEdit = !!user;
   const isSelf = user && Number(user.id) === Number(currentUserId);
   const isRhSelfEdit = currentUserRole === 'rh' && isEdit && isSelf;
+  const canManageRoles = ['admin', 'superadmin'].includes(currentUserRole);
+  const canEditUsername = ['admin', 'superadmin'].includes(currentUserRole);
   const canEditPassword = ['admin', 'superadmin'].includes(currentUserRole) || !isEdit || isSelf;
   const availableRoles = currentUserRole === 'superadmin'
     ? ROLES
     : currentUserRole === 'admin'
       ? ROLES.filter(r => r !== 'superadmin')
-      : ROLES;
+      : [user?.role || 'dev'];
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [passwordTouched, setPasswordTouched] = useState(false);
   const [form, setForm] = useState({
     username:  user?.username || '',
     name:      user?.name || '',
@@ -56,7 +59,7 @@ function UserModal({ user, onClose, onSave, currentUserRole, currentUserId }) {
     e.preventDefault();
     if (!form.username.trim()) { setError('Usuário é obrigatório'); return; }
     if (!isEdit && !form.password.trim()) { setError('Senha é obrigatória para novo usuário'); return; }
-    if (form.password.trim() && form.password.trim().length < 6) {
+    if (passwordTouched && form.password.trim() && form.password.trim().length < 6) {
       setError('A senha deve ter pelo menos 6 caracteres');
       return;
     }
@@ -67,8 +70,8 @@ function UserModal({ user, onClose, onSave, currentUserRole, currentUserId }) {
         username: form.username.trim(),
         name:     form.name.trim() || form.username.trim(),
         email:    form.email.trim() || null,
-        ...(!isRhSelfEdit ? { role: form.role } : {}),
-        ...(form.password.trim() ? { password: form.password } : {}),
+        ...(!isRhSelfEdit && canManageRoles ? { role: form.role } : {}),
+        ...((!isEdit || passwordTouched) && form.password.trim() ? { password: form.password } : {}),
       };
       if (isEdit) await api.put(`/users/${user.id}`, payload);
       else        await api.post('/users', payload);
@@ -116,9 +119,23 @@ function UserModal({ user, onClose, onSave, currentUserRole, currentUserId }) {
               </div>
               <div className="input-group" style={{ flex: 1 }}>
                 <label className="input-label">Usuário *</label>
-                <input className="input" type="text" placeholder="Ex.: joaosilva"
-                  value={form.username} onChange={set('username')} disabled={isEdit}
-                  autoComplete="off" name="new-username" />
+                {isEdit && !canEditUsername && (
+                  <span className="input-label-hint" style={{ marginTop: -4, marginBottom: 6 }}>
+                    Só admin/superadmin pode alterar o login.
+                  </span>
+                )}
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="Ex.: joaosilva"
+                  value={form.username}
+                  onChange={!isEdit || canEditUsername ? set('username') : undefined}
+                  readOnly={isEdit && !canEditUsername}
+                  title={isEdit && !canEditUsername ? 'Peça a um admin para alterar o usuário de login.' : undefined}
+                  style={isEdit && !canEditUsername ? { cursor: 'text' } : undefined}
+                  autoComplete="off"
+                  name="new-username"
+                />
               </div>
             </div>
 
@@ -134,15 +151,34 @@ function UserModal({ user, onClose, onSave, currentUserRole, currentUserId }) {
                 <label className="input-label">Cargo</label>
                 {isRhSelfEdit ? (
                   <>
-                    <input className="input" value={form.role} readOnly disabled style={{ textTransform: 'capitalize', cursor: 'not-allowed' }} />
-                    <span className="input-label-hint">Apenas admin pode alterar cargos.</span>
+                    <input
+                      className="input"
+                      value={form.role}
+                      readOnly
+                      disabled
+                      title="Apenas admin/superadmin pode alterar cargos."
+                      style={{ textTransform: 'capitalize', cursor: 'not-allowed' }}
+                    />
                   </>
                 ) : (
-                <select className="input" value={form.role} onChange={set('role')}>
-                  {availableRoles.map(r => (
-                    <option key={r} value={r} style={{ textTransform: 'capitalize' }}>{r}</option>
-                  ))}
-                </select>
+                  canManageRoles ? (
+                    <select className="input" value={form.role} onChange={set('role')}>
+                      {availableRoles.map(r => (
+                        <option key={r} value={r} style={{ textTransform: 'capitalize' }}>{r}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <>
+                      <input
+                        className="input"
+                        value={form.role}
+                        readOnly
+                        disabled
+                        title="Apenas admin/superadmin pode alterar cargos."
+                        style={{ textTransform: 'capitalize', cursor: 'not-allowed' }}
+                      />
+                    </>
+                  )
                 )}
               </div>
               {canEditPassword ? (
@@ -155,7 +191,11 @@ function UserModal({ user, onClose, onSave, currentUserRole, currentUserId }) {
                     <span className="input-label-hint">Mínimo 6 caracteres.</span>
                   )}
                   <input className="input" type="password" placeholder={isEdit ? '••••••••' : 'Senha'}
-                    value={form.password} onChange={set('password')}
+                    value={form.password}
+                    onChange={(e) => {
+                      setPasswordTouched(true);
+                      setForm((p) => ({ ...p, password: e.target.value }));
+                    }}
                     autoComplete="new-password" name="new-password" />
                 </div>
               ) : (
@@ -210,10 +250,12 @@ export default function Usuarios() {
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const isGestor = currentUser?.role === 'gestor';
   const isRH = currentUser?.role === 'rh';
+  const isManager = ['superadmin', 'admin', 'gestor'].includes(currentUser?.role);
 
   /** Abrir modal de edição (RH: só o próprio registro) */
   const canEditUser = (targetUser) => {
     if (isRH) return Number(targetUser?.id) === Number(currentUser?.id);
+    if (!isManager) return Number(targetUser?.id) === Number(currentUser?.id);
     if (isSuperAdmin) return true;
     if (currentUser?.role === 'admin' && targetUser?.role === 'superadmin') return false;
     if (currentUser?.role === 'admin') return true;
@@ -223,6 +265,7 @@ export default function Usuarios() {
 
   /** Ativar/desativar ou excluir — RH não usa essas ações na lista */
   const canManageUserLifecycle = (targetUser) => {
+    if (!isManager) return false;
     if (isRH) return false;
     if (isSuperAdmin) return true;
     if (currentUser?.role === 'admin' && targetUser?.role === 'superadmin') return false;
@@ -304,7 +347,7 @@ export default function Usuarios() {
             </svg>
             Atualizar
           </button>
-          {!isRH && (
+          {isManager && (
           <button className="btn btn-primary" onClick={() => { setEditing(null); setModalOpen(true); }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>

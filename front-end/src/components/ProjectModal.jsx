@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const fmt = (val) => (val == null || val === '') ? '' : String(val);
 
@@ -12,32 +13,26 @@ const formatDevTimeDisplay = (totalSeconds) => {
   return `${hours}h ${minutes}min`;
 };
 
-const devSecondsToHours = (secs) => (secs || 0) / 3600;
-
-const DIFFICULTY_LEVELS = [
-  { key: 'baixa',   label: 'Baixa',   mult: 1.0, color: 'var(--green-600)',  bg: 'var(--green-50)',  border: 'var(--green-200)',  desc: 'Tarefa simples' },
-  { key: 'media',   label: 'Média',   mult: 1.5, color: 'var(--blue-600)',   bg: 'var(--blue-50)',   border: 'var(--blue-200)',   desc: 'Alguma complexidade' },
-  { key: 'alta',    label: 'Alta',    mult: 2.0, color: 'var(--amber-600)',  bg: 'var(--amber-50)',  border: 'var(--amber-200)',  desc: 'Bastante esforço' },
-  { key: 'critica', label: 'Crítica', mult: 3.0, color: 'var(--red-600)',    bg: 'var(--red-50)',    border: 'var(--red-200)',    desc: 'Urgente / alto impacto' },
-];
-
-const getDiffMult = (key) => DIFFICULTY_LEVELS.find(d => d.key === key)?.mult ?? 1.0;
-
-const calcSuggested = (devHours, rate, diffKey) => {
-  const r = parseFloat(rate);
-  if (!Number.isFinite(r) || r <= 0 || devHours <= 0) return null;
-  return (devHours * r * getDiffMult(diffKey)).toFixed(2);
-};
-
 export default function ProjectModal({ project, onClose, onSave }) {
+  const { user } = useAuth();
   const isEdit = !!project;
-  const isAwaiting = isEdit && project.awaiting_params;
-  const devHours = devSecondsToHours(project?.dev_seconds);
+
+  const myPart = useMemo(
+    () => project?.bonif_participants?.find((bp) => bp.user_id === user?.id),
+    [project, user?.id]
+  );
+  const hasParticipantRows = (project?.bonif_participants?.length ?? 0) > 0;
+  const collaborative = !!(project?.collaborative && project?.bonif_participants?.length > 1);
+
+  const awaitingMine = hasParticipantRows && myPart
+    ? myPart.awaiting_params === 1
+    : !!project?.awaiting_params;
+
+  const isAwaiting = isEdit && awaitingMine;
 
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [suggestedAutoCalc, setSuggestedAutoCalc] = useState(false);
 
   const [form, setForm] = useState({
     name:             fmt(project?.name),
@@ -45,8 +40,6 @@ export default function ProjectModal({ project, onClose, onSave }) {
     link:             fmt(project?.link),
     financial_return: fmt(project?.financial_return),
     suggested_value:  fmt(project?.suggested_value),
-    hourly_rate:      fmt(project?.hourly_rate),
-    difficulty:       project?.difficulty || '',
     responsible_id:   fmt(project?.responsible_id),
   });
 
@@ -54,26 +47,31 @@ export default function ProjectModal({ project, onClose, onSave }) {
     api.get('/tasks/users').then(r => setUsers(r.data)).catch(() => {});
   }, []);
 
-  const set = (field) => (e) => setForm(p => ({ ...p, [field]: e.target.value }));
-
-  const recalcSuggested = (rate, diffKey) => {
-    const v = calcSuggested(devHours, rate, diffKey);
-    if (v !== null) {
-      setSuggestedAutoCalc(true);
-      setForm(p => ({ ...p, suggested_value: v }));
+  useEffect(() => {
+    if (!project || !user) return;
+    const mp = project.bonif_participants?.find((bp) => bp.user_id === user.id);
+    if (hasParticipantRows && mp) {
+      setForm({
+        name:             fmt(project.name),
+        description:      fmt(project.description),
+        link:             fmt(project.link),
+        financial_return: fmt(mp.financial_return),
+        suggested_value:  fmt(mp.suggested_value),
+        responsible_id:   fmt(project.responsible_id),
+      });
+    } else if (project) {
+      setForm({
+        name:             fmt(project.name),
+        description:      fmt(project.description),
+        link:             fmt(project.link),
+        financial_return: fmt(project.financial_return),
+        suggested_value:  fmt(project.suggested_value),
+        responsible_id:   fmt(project.responsible_id),
+      });
     }
-  };
+  }, [project, user, hasParticipantRows]);
 
-  const handleHourlyRateChange = (e) => {
-    const rate = e.target.value;
-    setForm(p => ({ ...p, hourly_rate: rate }));
-    recalcSuggested(rate, form.difficulty);
-  };
-
-  const handleDifficultyChange = (key) => {
-    setForm(p => ({ ...p, difficulty: key }));
-    recalcSuggested(form.hourly_rate, key);
-  };
+  const set = (field) => (e) => setForm(p => ({ ...p, [field]: e.target.value }));
 
   const parseMoney = (val) => {
     if (val == null || val === '') return null;
@@ -82,35 +80,52 @@ export default function ProjectModal({ project, onClose, onSave }) {
     return Number.isFinite(n) ? n : null;
   };
 
+  const devSecondsDisplay = myPart?.dev_seconds ?? project?.dev_seconds;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) { setError('Nome do projeto é obrigatório'); return; }
 
     if (isAwaiting) {
-      if (!form.financial_return && !form.suggested_value && !form.hourly_rate) {
-        setError('Preencha ao menos um campo: taxa por hora, retorno financeiro ou sugestão de valor');
+      const sv = parseMoney(form.suggested_value);
+      if (sv == null || sv <= 0) {
+        setError('Informe um valor de bonificação sugerido (maior que zero)');
         return;
       }
+    }
+
+    if (hasParticipantRows && !myPart) {
+      setError('Seu usuário não está nesta bonificação colaborativa.');
+      return;
     }
 
     setError('');
     setLoading(true);
     try {
-      const payload = {
-        name:             form.name || undefined,
-        description:      form.description || null,
-        link:             form.link || null,
-        financial_return: form.financial_return ? String(form.financial_return).trim() : null,
-        suggested_value:  parseMoney(form.suggested_value),
-        hourly_rate:      parseMoney(form.hourly_rate),
-        difficulty:       form.difficulty || null,
-        responsible_id:   form.responsible_id ? Number(form.responsible_id) : null,
-      };
-
-      if (isEdit) {
-        await api.put(`/projects/${project.id}`, payload);
+      if (isEdit && hasParticipantRows && myPart) {
+        await api.put(`/projects/${project.id}/participants/${myPart.id}`, {
+          financial_return: form.financial_return ? String(form.financial_return).trim() : null,
+          suggested_value:  parseMoney(form.suggested_value),
+        });
+        const desc = form.description ? String(form.description).trim() : '';
+        const prevDesc = project.description ? String(project.description).trim() : '';
+        if (desc !== prevDesc) {
+          await api.put(`/projects/${project.id}`, { description: desc || null });
+        }
       } else {
-        await api.post('/projects', payload);
+        const payload = {
+          name:             form.name || undefined,
+          description:      form.description || null,
+          link:             form.link || null,
+          financial_return: form.financial_return ? String(form.financial_return).trim() : null,
+          suggested_value:  parseMoney(form.suggested_value),
+          responsible_id:   form.responsible_id ? Number(form.responsible_id) : null,
+        };
+        if (isEdit) {
+          await api.put(`/projects/${project.id}`, payload);
+        } else {
+          await api.post('/projects', payload);
+        }
       }
       onSave();
     } catch (err) {
@@ -121,7 +136,7 @@ export default function ProjectModal({ project, onClose, onSave }) {
   };
 
   const title = isAwaiting
-    ? 'Preencher Parâmetros'
+    ? (collaborative ? 'Sua bonificação (projeto colaborativo)' : 'Preencher Parâmetros')
     : isEdit
       ? 'Editar Projeto'
       : 'Novo Projeto';
@@ -152,19 +167,24 @@ export default function ProjectModal({ project, onClose, onSave }) {
               </div>
             )}
 
-            {/* Dev time info (read-only) */}
-            {isEdit && project.dev_seconds > 0 && (
+            {isEdit && devSecondsDisplay > 0 && (
               <div className="project-dev-time-info">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                 </svg>
-                <span>Tempo de desenvolvimento: <strong>{formatDevTimeDisplay(project.dev_seconds)}</strong></span>
+                <span>Tempo de desenvolvimento: <strong>{formatDevTimeDisplay(devSecondsDisplay)}</strong></span>
+              </div>
+            )}
+
+            {isAwaiting && collaborative && (
+              <div style={{ marginBottom: 16, padding: '10px 12px', background: 'var(--indigo-50, #eef2ff)', border: '1px solid #c7d2fe', borderRadius: 8, fontSize: 13, color: 'var(--indigo-800, #3730a3)' }}>
+                Cada membro do time tem uma bonificação individual neste projeto. Preencha apenas a sua.
               </div>
             )}
 
             {isAwaiting && (
               <div style={{ marginBottom: 16, padding: '10px 12px', background: 'var(--amber-50)', border: '1px solid var(--amber-100)', borderRadius: 8, fontSize: 13, color: 'var(--amber-600)' }}>
-                Preencha os dados abaixo para que o projeto fique disponível para bonificação.
+                Informe o valor sugerido e o retorno financeiro para liberar a bonificação ao gestor.
               </div>
             )}
 
@@ -232,89 +252,21 @@ export default function ProjectModal({ project, onClose, onSave }) {
               </p>
             </div>
 
-            {/* Billing: taxa + dificuldade */}
-            <div className="modal-row" style={{ alignItems: 'flex-start' }}>
-              <div className="input-group" style={{ flex: '0 0 140px', marginBottom: 0 }}>
-                <label className="input-label">
-                  Taxa por Hora
-                  <span style={{ fontWeight: 400, color: 'var(--gray-400)', marginLeft: 6, fontSize: 11 }}>R$/h</span>
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--gray-400)', pointerEvents: 'none' }}>R$</span>
-                  <input
-                    className="input" type="number" min="0" step="0.01" placeholder="0,00"
-                    value={form.hourly_rate} onChange={handleHourlyRateChange}
-                    style={{ paddingLeft: 34 }}
-                  />
-                </div>
-              </div>
-
-              <div className="input-group" style={{ flex: 1, marginBottom: 0 }}>
-                <label className="input-label">Dificuldade</label>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {DIFFICULTY_LEVELS.map(d => {
-                    const active = form.difficulty === d.key;
-                    return (
-                      <button
-                        key={d.key}
-                        type="button"
-                        title={`${d.desc} (×${d.mult})`}
-                        onClick={() => handleDifficultyChange(active ? '' : d.key)}
-                        style={{
-                          flex: 1, padding: '6px 4px', borderRadius: 8, border: `1.5px solid ${active ? d.color : 'var(--gray-200)'}`,
-                          background: active ? d.bg : 'var(--white)', color: active ? d.color : 'var(--gray-500)',
-                          fontSize: 11, fontWeight: active ? 700 : 500, cursor: 'pointer',
-                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        <span>{d.label}</span>
-                        <span style={{ fontSize: 10, opacity: 0.8 }}>×{d.mult}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Preview do cálculo */}
-            {form.hourly_rate && parseFloat(form.hourly_rate) > 0 && devHours > 0 && (
-              <div style={{
-                background: 'var(--blue-50)', border: '1px solid var(--blue-100)',
-                borderRadius: 8, padding: '8px 12px', fontSize: 12,
-                color: 'var(--blue-600)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
-              }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="8"/><polyline points="11 12 12 12 12 16"/>
-                </svg>
-                <span>
-                  {devHours.toFixed(2)}h × R$ {parseFloat(form.hourly_rate).toFixed(2)}/h
-                  {form.difficulty && ` × ${getDiffMult(form.difficulty)} (${DIFFICULTY_LEVELS.find(d => d.key === form.difficulty)?.label})`}
-                  {' = '}
-                  <strong>R$ {calcSuggested(devHours, form.hourly_rate, form.difficulty)}</strong>
-                </span>
-              </div>
-            )}
-
-            {/* Sugestão de valor */}
             <div className="input-group" style={{ marginBottom: 0 }}>
               <label className="input-label">
-                Sugestão de Valor (R$)
-                {suggestedAutoCalc && (
-                  <span style={{ fontWeight: 400, color: 'var(--green-600)', marginLeft: 6, fontSize: 11 }}>preenchido pelo cálculo</span>
-                )}
+                Sugestão de valor (R$) {isAwaiting && '*'}
               </label>
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--gray-400)', pointerEvents: 'none' }}>R$</span>
                 <input
                   className="input" type="number" min="0" step="0.01" placeholder="0,00"
                   value={form.suggested_value}
-                  onChange={(e) => { setSuggestedAutoCalc(false); set('suggested_value')(e); }}
+                  onChange={set('suggested_value')}
                   style={{ paddingLeft: 34 }}
                 />
               </div>
               <p style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>
-                Ajuste conforme o contexto. O cálculo é uma base de referência.
+                Valor que você propõe para esta bonificação (o gestor poderá aceitar ou negociar).
               </p>
             </div>
           </div>
@@ -346,13 +298,6 @@ export default function ProjectModal({ project, onClose, onSave }) {
           border-radius: 8px;
           color: var(--red-600);
           font-size: 13px;
-          margin-bottom: 16px;
-        }
-        .modal-row {
-          display: flex;
-          gap: 12px;
-        }
-        .modal-row .input-group {
           margin-bottom: 16px;
         }
         .project-dev-time-info {

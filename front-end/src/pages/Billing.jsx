@@ -26,13 +26,6 @@ const MONTH_NAMES = [
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro',
 ];
 
-const DIFFICULTY = {
-  baixa:   { label: 'Baixa',   mult: 1.0, color: 'var(--green-600)', bg: 'var(--green-50)',  border: 'var(--green-200)' },
-  media:   { label: 'Média',   mult: 1.5, color: 'var(--blue-600)',  bg: 'var(--blue-50)',   border: 'var(--blue-200)'  },
-  alta:    { label: 'Alta',    mult: 2.0, color: 'var(--amber-600)', bg: 'var(--amber-50)',  border: 'var(--amber-200)' },
-  critica: { label: 'Crítica', mult: 3.0, color: 'var(--red-600)',   bg: 'var(--red-50)',    border: 'var(--red-200)'   },
-};
-
 const ROLE_LABEL = { superadmin: 'Super Admin', admin: 'Admin', dev: 'Desenvolvedor', suporte: 'Suporte', gestor: 'Gestor', rh: 'RH' };
 
 const billingStorageKey = (userId) => (userId ? `gestor_ti_billing_filter_${userId}` : null);
@@ -67,12 +60,9 @@ function clampBillingYear(y, cy) {
 
 /* ─── BillingCard ──────────────────────────────────────────────── */
 function BillingCard({ project, index }) {
-  const diff   = project.difficulty ? DIFFICULTY[project.difficulty] : null;
-  const hours  = project.dev_seconds ? project.dev_seconds / 3600 : null;
-  const rate   = project.hourly_rate ? Number(project.hourly_rate) : null;
-  const mult   = diff?.mult ?? 1;
-  const calcVal = hours && rate ? hours * rate * mult : null;
   const finalVal = project.approved_value ?? project.suggested_value;
+  const inst = Math.min(12, Math.max(1, parseInt(project.installment_count ?? 1, 10) || 1));
+  const parcela = inst > 1 && finalVal != null ? Number(finalVal) / inst : null;
 
   return (
     <div className="bill-card">
@@ -174,43 +164,13 @@ function BillingCard({ project, index }) {
               </div>
             )}
 
-            {/* hourly rate */}
-            {rate && (
+            {inst > 1 && parcela != null && (
               <div className="bill-calc-row">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="12" y1="1" x2="12" y2="23"/>
-                  <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                  <rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>
                 </svg>
-                <span className="bill-calc-label">Taxa por hora</span>
-                <span className="bill-calc-val">{fmtMoney(rate)}/h</span>
-              </div>
-            )}
-
-            {/* difficulty */}
-            {diff && (
-              <div className="bill-calc-row">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                </svg>
-                <span className="bill-calc-label">Dificuldade</span>
-                <span
-                  className="bill-diff-chip"
-                  style={{ color: diff.color, background: diff.bg, border: `1px solid ${diff.border}` }}
-                >
-                  {diff.label} ×{diff.mult}
-                </span>
-              </div>
-            )}
-
-            {/* formula */}
-            {calcVal && (
-              <div className="bill-formula">
-                <span>{hours?.toFixed(2)}h</span>
-                <span className="bill-op">×</span>
-                <span>{fmtMoney(rate)}/h</span>
-                {diff && <><span className="bill-op">×</span><span>{diff.mult}</span></>}
-                <span className="bill-op">=</span>
-                <span className="bill-formula-result">{fmtMoney(calcVal)}</span>
+                <span className="bill-calc-label">Parcelamento</span>
+                <span className="bill-calc-val">{inst}x de {fmtMoney(parcela)}</span>
               </div>
             )}
 
@@ -580,7 +540,11 @@ export default function Billing() {
         ) : (
           <div className="billing-list">
             {items.map((p, i) => (
-              <BillingCard key={p.id} project={p} index={i + 1} />
+              <BillingCard
+                key={p.participant_id != null ? `bp-${p.participant_id}` : `p-${p.id}-${i}`}
+                project={p}
+                index={i + 1}
+              />
             ))}
 
             {/* total footer */}

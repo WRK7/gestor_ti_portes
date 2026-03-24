@@ -46,7 +46,7 @@ router.post(
     body('due_date').notEmpty(),
     body('assignees').isArray({ min: 1 }),
     body('priority').optional().isIn(['low', 'medium', 'high', 'critical']),
-    body('category_id').optional().isInt({ min: 1 }),
+    body('category_id').optional({ nullable: true }).isInt({ min: 1 }),
   ],
   handleValidation,
   createTask
@@ -59,7 +59,7 @@ router.put(
     body('title').optional().trim().isLength({ min: 1, max: 500 }),
     body('status').optional().isIn(taskStatuses),
     body('priority').optional().isIn(['low', 'medium', 'high', 'critical']),
-    body('category_id').optional().isInt({ min: 1 }),
+    body('category_id').optional({ nullable: true }).isInt({ min: 1 }),
   ],
   handleValidation,
   updateTask

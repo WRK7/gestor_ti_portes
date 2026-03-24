@@ -9,12 +9,13 @@ const {
   createProject,
   createFromTask,
   updateProject,
+  updateParticipant,
   deleteProject,
   getStats,
   getMonthlyStats,
   getMonthlyByUser,
   getPendingByUser,
-  toggleBonificado,
+  bonificarAction,
   getBillingReport,
 } = require('../controllers/projectController');
 
@@ -61,6 +62,16 @@ router.post(
   createProject
 );
 router.put(
+  '/:id/participants/:participantId',
+  denyRH,
+  [
+    param('id').isInt({ min: 1 }),
+    param('participantId').isInt({ min: 1 }),
+  ],
+  handleValidation,
+  updateParticipant
+);
+router.put(
   '/:id',
   denyRH,
   [param('id').isInt({ min: 1 })],
@@ -71,10 +82,15 @@ router.patch(
   '/:id/bonificar',
   [
     param('id').isInt({ min: 1 }),
+    body('action')
+      .isIn(['gestor_accept_dev', 'gestor_propose', 'dev_accept', 'dev_counter'])
+      .withMessage('Ação inválida'),
     body('approved_value').optional().isFloat({ min: 0 }),
+    body('installment_count').optional().isInt({ min: 1, max: 12 }),
+    body('participant_id').optional().isInt({ min: 1 }),
   ],
   handleValidation,
-  toggleBonificado
+  bonificarAction
 );
 router.delete('/:id', denyRH, [param('id').isInt({ min: 1 })], handleValidation, deleteProject);
 

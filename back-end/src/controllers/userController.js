@@ -50,7 +50,7 @@ const createUser = async (req, res) => {
 
 const updateUser = async (req, res) => {
   const { id } = req.params;
-  const { name, email, role, active, password } = req.body;
+  const { name, email, role, active, password, username: usernameBody } = req.body;
   const actorRole = req.user.role;
 
   try {
@@ -93,6 +93,31 @@ const updateUser = async (req, res) => {
       return res.status(403).json({ error: 'Apenas admins podem alterar senhas de outros usuários' });
     }
 
+    let usernameClause = '';
+    const usernameParams = [];
+    if (usernameBody !== undefined && usernameBody !== null) {
+      const trimmed = String(usernameBody).trim();
+      if (!trimmed) {
+        return res.status(400).json({ error: 'Usuário é obrigatório' });
+      }
+      if (!['superadmin', 'admin'].includes(actorRole)) {
+        return res.status(403).json({ error: 'Apenas admin/superadmin pode alterar o usuário de login' });
+      }
+      const [unameRow] = await pool.query('SELECT username FROM users WHERE id = ?', [id]);
+      if (!unameRow.length) return res.status(404).json({ error: 'Usuário não encontrado' });
+      if (trimmed !== unameRow[0].username) {
+        if (trimmed.length < 3 || trimmed.length > 80) {
+          return res.status(400).json({ error: 'Usuário deve ter entre 3 e 80 caracteres' });
+        }
+        const [dupUser] = await pool.query('SELECT id FROM users WHERE username = ? AND id != ?', [trimmed, id]);
+        if (dupUser.length) {
+          return res.status(400).json({ error: 'Este usuário de login já está em uso' });
+        }
+        usernameClause = ', username = ?';
+        usernameParams.push(trimmed);
+      }
+    }
+
     let passwordClause = '';
     const params = [];
 
@@ -102,16 +127,22 @@ const updateUser = async (req, res) => {
       params.push(hashed);
     }
 
+    const values = [name || null, email || null, role || null, active ?? null];
+    if (usernameClause) values.push(...usernameParams);
+    if (passwordClause) values.push(...params);
+    values.push(id);
+
     await pool.query(
       `UPDATE users SET
         name   = COALESCE(?, name),
         email  = COALESCE(?, email),
         role   = COALESCE(?, role),
         active = COALESCE(?, active)
+        ${usernameClause}
         ${passwordClause},
         updated_at = NOW()
       WHERE id = ?`,
-      [name || null, email || null, role || null, active ?? null, ...params, id]
+      values
     );
 
     const [rows] = await pool.query(
@@ -121,6 +152,9 @@ const updateUser = async (req, res) => {
     const detailParts = [];
     if (name != null) detailParts.push('nome');
     if (email != null) detailParts.push('e-mail');
+    if (usernameBody !== undefined && usernameBody !== null && String(usernameBody).trim() !== rows[0]?.username) {
+      detailParts.push('usuário de login');
+    }
     if (role != null) detailParts.push('cargo');
     if (active != null) detailParts.push('status');
     if (password && password.trim()) detailParts.push('senha');
@@ -128,7 +162,7 @@ const updateUser = async (req, res) => {
     return res.json(rows[0]);
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(400).json({ error: 'E-mail já cadastrado' });
+      return res.status(400).json({ error: 'Usuário ou e-mail já cadastrado' });
     }
     console.error('Erro ao atualizar usuário:', err.message);
     return res.status(500).json({ error: 'Erro interno do servidor' });

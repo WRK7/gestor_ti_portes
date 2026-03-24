@@ -57,8 +57,8 @@ const login = async (req, res) => {
     const [rows] = await conn.query(
       `SELECT id, username, password, name, role, active, authorizationStatus
        FROM users
-       WHERE username = ?`,
-      [username]
+       WHERE LOWER(username) = LOWER(?)`,
+      [String(username).trim()]
     );
 
     if (rows.length === 0) {

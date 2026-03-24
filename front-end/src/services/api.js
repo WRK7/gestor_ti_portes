@@ -3,6 +3,8 @@ import { getAccessToken, setAccessToken, clearAccessToken } from './accessToken'
 
 const getBaseURL = () => {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  /** Em dev, Vite faz proxy de /api → back-end (mesma origem do browser; cookies de sessão funcionam). */
+  if (import.meta.env.DEV) return '/api';
   const host = window.location.hostname;
   return `http://${host}:3847/api`;
 };

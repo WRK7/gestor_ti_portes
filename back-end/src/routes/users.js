@@ -16,7 +16,7 @@ const requireManager = (req, res, next) => {
   next();
 };
 
-router.get('/', requireManager, getAllUsers);
+router.get('/', getAllUsers);
 router.post(
   '/',
   requireManager,
@@ -35,6 +35,7 @@ router.put(
   [
     param('id').isInt({ min: 1 }).withMessage('ID inválido'),
     body('name').optional().trim().isLength({ max: 255 }).withMessage('Nome muito longo (máx. 255 caracteres)'),
+    body('username').optional().trim().isLength({ min: 3, max: 80 }).withMessage('Usuário deve ter entre 3 e 80 caracteres'),
     body('email').optional({ checkFalsy: true }).isEmail().withMessage('E-mail inválido'),
     body('role').optional().isIn(ROLES).withMessage('Cargo inválido'),
     body('active').optional().isIn([0, 1, true, false]).withMessage('Status ativo inválido'),
