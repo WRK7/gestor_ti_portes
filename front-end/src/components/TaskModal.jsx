@@ -230,13 +230,24 @@ export default function TaskModal({ task, onClose, onSave }) {
 
             <div className="modal-row">
               <div className="input-group" style={{ flex: 1 }}>
-                <label className="input-label">Data e Hora *</label>
+                <label className="input-label">Prazo limite (vencimento) *</label>
+                <span
+                  style={{
+                    display: 'block',
+                    fontSize: 12,
+                    color: 'var(--gray-400)',
+                    lineHeight: 1.35,
+                    marginTop: -4,
+                    marginBottom: 6,
+                  }}
+                >
+                  Até quando a tarefa deve estar concluída (não é a data de criação).
+                </span>
                 <input
                   className="input"
                   type="datetime-local"
                   value={form.due_date}
                   onChange={set('due_date')}
-                  min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
                 />
               </div>
               <div className="input-group" style={{ flex: 1 }}>
