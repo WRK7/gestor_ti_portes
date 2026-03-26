@@ -346,8 +346,90 @@ export default function ModoGestor() {
           transition: box-shadow var(--transition), transform var(--transition);
         }
         .bonif-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+        .programmer-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+          gap: 12px;
+        }
+        .programmer-card {
+          background: var(--white);
+          border: 1px solid var(--gray-200);
+          border-radius: var(--radius-lg);
+          padding: 14px;
+          box-shadow: var(--shadow-sm);
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .programmer-title {
+          font-size: 14px;
+          font-weight: 700;
+          color: var(--gray-900);
+          margin: 0;
+        }
+        .programmer-subtitle {
+          font-size: 11px;
+          color: var(--gray-400);
+          margin: 2px 0 0;
+        }
+        .programmer-stats {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .programmer-stat {
+          border: 1px solid var(--gray-200);
+          border-radius: 10px;
+          padding: 8px;
+          background: var(--gray-50);
+        }
+        .programmer-stat-value {
+          font-size: 17px;
+          font-weight: 700;
+          color: var(--gray-900);
+          line-height: 1;
+        }
+        .programmer-stat-label {
+          font-size: 11px;
+          color: var(--gray-500);
+          margin-top: 4px;
+        }
+        .gestor-main {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+          align-items: start;
+        }
+        .gestor-left,
+        .gestor-right {
+          min-width: 0;
+        }
+        .gestor-right {
+          position: sticky;
+          top: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .gestor-panel {
+          background: var(--white);
+          border: 1px solid var(--gray-200);
+          border-radius: var(--radius-lg);
+          padding: 16px;
+          box-shadow: var(--shadow-sm);
+        }
+        .gestor-panel .tasks-header {
+          margin-bottom: 12px;
+        }
+        .bonif-full-width {
+          margin-top: 20px;
+        }
 
-        @media (max-width: 1100px) { .stats-grid { grid-template-columns: repeat(2, 1fr) !important; } }
+        @media (max-width: 1100px) {
+          .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .gestor-main { grid-template-columns: 1fr; }
+          .gestor-right { position: static; }
+        }
         @media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr !important; } .tasks-grid { grid-template-columns: 1fr; } .dashboard { padding: 20px 16px; } .filter-tab { white-space: nowrap; } }
       `}</style>
 
@@ -407,116 +489,163 @@ export default function ModoGestor() {
             />
           </div>
 
-          {/* ── tab switch + list ── */}
-          <div className="tasks-section">
-            <div className="tasks-header">
-              <div className="filter-tabs">
-                {TABS.map(t => (
-                  <button
-                    key={t.key}
-                    className={`filter-tab${activeTab === t.key ? ' active' : ''}`}
-                    onClick={() => setTab(t.key)}
-                  >
-                    {t.label}
-                    <span className="filter-tab-count">{data[t.key]?.length ?? 0}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {tasks.length === 0 ? (
-              <div className="empty-state">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-                  <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
-                </svg>
-                <p>{tab?.emptyMsg}</p>
-              </div>
-            ) : (
-              <div className="tasks-grid">
-                {tasks.map(t => (
-                  <ManagerTaskCard
-                    key={t.id}
-                    task={t}
-                    accentColor={tab?.color ?? 'var(--gray-200)'}
-                    isOverdue={!!tab?.isOverdue}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* ═══ BONIFICAÇÃO ═══ */}
-          <div className="gestor-divider" />
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <div>
-              <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-900)', margin: '0 0 2px' }}>Bonificações</h2>
-              <p style={{ fontSize: 12, color: 'var(--gray-400)', margin: 0 }}>Projetos de bonificação do time</p>
-            </div>
-            <button className="btn btn-secondary btn-sm" onClick={() => navigate('/bonificacao')}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-              </svg>
-              Ir para Bonificação
-            </button>
-          </div>
-
-          {/* bonif stat cards */}
-          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 20 }}>
-            <StatCard
-              label="Aguardando parâmetros" value={data.bonif_awaiting?.length ?? 0}
-              color="#d97706" bg="#fffbeb"
-              icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
-            />
-            <StatCard
-              label="Em negociação" value={data.bonif_pending?.length ?? 0}
-              color="#2563eb" bg="#eff6ff"
-              icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>}
-            />
-            <StatCard
-              label="Bonificados" value={data.bonif_approved?.length ?? 0}
-              color="#16a34a" bg="#f0fdf4"
-              icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>}
-            />
-          </div>
-
-          {/* bonif tabs + list */}
-          <div className="tasks-section">
-            <div className="tasks-header">
-              <div className="filter-tabs">
-                {BONIF_TABS.map(t => (
-                  <button
-                    key={t.key}
-                    className={`filter-tab${bonifTab === t.key ? ' active' : ''}`}
-                    onClick={() => setBonifTab(t.key)}
-                  >
-                    {t.label}
-                    <span className="filter-tab-count">{data[t.key]?.length ?? 0}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {(() => {
-              const bt = BONIF_TABS.find(t => t.key === bonifTab);
-              const items = data[bonifTab] ?? [];
-              return items.length === 0 ? (
-                <div className="empty-state">
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                  </svg>
-                  <p>{bt?.emptyMsg}</p>
+          <div className="gestor-main">
+            <div className="gestor-left">
+              {/* ── tab switch + list ── */}
+              <div className="tasks-section">
+                <div className="tasks-header">
+                  <div className="filter-tabs">
+                    {TABS.map(t => (
+                      <button
+                        key={t.key}
+                        className={`filter-tab${activeTab === t.key ? ' active' : ''}`}
+                        onClick={() => setTab(t.key)}
+                      >
+                        {t.label}
+                        <span className="filter-tab-count">{data[t.key]?.length ?? 0}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              ) : (
-                <div className="tasks-grid">
-                  {items.map(p => (
-                    <BonifProjectCard key={p.id} project={p} statusKey={bt?.statusKey} />
+
+                {tasks.length === 0 ? (
+                  <div className="empty-state">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                      <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <p>{tab?.emptyMsg}</p>
+                  </div>
+                ) : (
+                  <div className="tasks-grid">
+                    {tasks.map(t => (
+                      <ManagerTaskCard
+                        key={t.id}
+                        task={t}
+                        accentColor={tab?.color ?? 'var(--gray-200)'}
+                        isOverdue={!!tab?.isOverdue}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="gestor-right">
+              <section className="gestor-panel">
+                <div style={{ marginBottom: 12 }}>
+                  <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-900)', margin: '0 0 2px' }}>
+                    Resumo por programador
+                  </h2>
+                  <p style={{ fontSize: 12, color: 'var(--gray-400)', margin: 0 }}>
+                    Projetos por responsável e volume de tarefas por status
+                  </p>
+                </div>
+
+                {(data.programmer_summary?.length ?? 0) === 0 ? (
+                  <div className="empty-state"><p>Nenhum dado por programador no momento</p></div>
+                ) : (
+                  <div className="programmer-grid">
+                    {data.programmer_summary.map((person) => (
+                      <div key={person.id} className="programmer-card">
+                        <div>
+                          <p className="programmer-title">{person.name || person.username}</p>
+                          <p className="programmer-subtitle">@{person.username} · {person.role}</p>
+                        </div>
+                        <div className="programmer-stats">
+                          <div className="programmer-stat">
+                            <div className="programmer-stat-value">{person.active_projects}</div>
+                            <div className="programmer-stat-label">Projetos em andamento</div>
+                          </div>
+                          <div className="programmer-stat">
+                            <div className="programmer-stat-value">{person.completed_projects}</div>
+                            <div className="programmer-stat-label">Projetos concluídos</div>
+                          </div>
+                          <div className="programmer-stat">
+                            <div className="programmer-stat-value">{person.overdue_tasks}</div>
+                            <div className="programmer-stat-label">Tarefas atrasadas</div>
+                          </div>
+                          <div className="programmer-stat">
+                            <div className="programmer-stat-value">{person.paused_tasks}</div>
+                            <div className="programmer-stat-label">Tarefas pausadas</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+
+          <section className="gestor-panel bonif-full-width">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-900)', margin: '0 0 2px' }}>Bonificações</h2>
+                <p style={{ fontSize: 12, color: 'var(--gray-400)', margin: 0 }}>Projetos de bonificação do time</p>
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={() => navigate('/bonificacao')}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                </svg>
+                Ir para Bonificação
+              </button>
+            </div>
+
+            <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 16 }}>
+              <StatCard
+                label="Aguardando parâmetros" value={data.bonif_awaiting?.length ?? 0}
+                color="#d97706" bg="#fffbeb"
+                icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
+              />
+              <StatCard
+                label="Em negociação" value={data.bonif_pending?.length ?? 0}
+                color="#2563eb" bg="#eff6ff"
+                icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>}
+              />
+              <StatCard
+                label="Bonificados" value={data.bonif_approved?.length ?? 0}
+                color="#16a34a" bg="#f0fdf4"
+                icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>}
+              />
+            </div>
+
+            <div className="tasks-section">
+              <div className="tasks-header">
+                <div className="filter-tabs">
+                  {BONIF_TABS.map(t => (
+                    <button
+                      key={t.key}
+                      className={`filter-tab${bonifTab === t.key ? ' active' : ''}`}
+                      onClick={() => setBonifTab(t.key)}
+                    >
+                      {t.label}
+                      <span className="filter-tab-count">{data[t.key]?.length ?? 0}</span>
+                    </button>
                   ))}
                 </div>
-              );
-            })()}
-          </div>
+              </div>
+
+              {(() => {
+                const bt = BONIF_TABS.find(t => t.key === bonifTab);
+                const items = data[bonifTab] ?? [];
+                return items.length === 0 ? (
+                  <div className="empty-state">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
+                    <p>{bt?.emptyMsg}</p>
+                  </div>
+                ) : (
+                  <div className="tasks-grid">
+                    {items.map(p => (
+                      <BonifProjectCard key={p.id} project={p} statusKey={bt?.statusKey} />
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </section>
         </>
       )}
     </div>

@@ -208,9 +208,11 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { confirm, alert } = useDialog();
   const readonly = ['gestor', 'rh'].includes(user?.role);
+  const canSeeManagerSummary = ['gestor', 'admin', 'superadmin'].includes(user?.role);
 
   const [tasks, setTasks] = useState([]);
   const [stats, setStats] = useState(null);
+  const [programmerSummary, setProgrammerSummary] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
@@ -229,12 +231,18 @@ export default function Dashboard() {
       ]);
       setTasks(tasksRes.data);
       setStats(statsRes.data);
+      if (canSeeManagerSummary) {
+        const managerRes = await api.get('/manager/dashboard');
+        setProgrammerSummary(managerRes.data?.programmer_summary || []);
+      } else {
+        setProgrammerSummary([]);
+      }
     } catch (err) {
       console.error('Erro ao carregar dados:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canSeeManagerSummary]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -440,8 +448,8 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Filter tabs */}
-      <div className="tasks-section">
+      <div className={`dashboard-main${canSeeManagerSummary ? ' with-summary' : ''}`}>
+        <div className="tasks-section">
         <div className="tasks-header">
           <div className="filter-tabs">
             {[
@@ -495,6 +503,35 @@ export default function Dashboard() {
               />
             ))}
           </div>
+        )}
+      </div>
+        {canSeeManagerSummary && (
+          <aside className="manager-summary-section">
+            <div className="manager-summary-header">
+              <h2>Resumo por programador</h2>
+              <p>Projetos por responsável e tarefas atrasadas/pausadas</p>
+            </div>
+            {programmerSummary.length === 0 ? (
+              <div className="empty-state" style={{ marginBottom: 16 }}>
+                <p>Nenhum dado de programador disponível</p>
+              </div>
+            ) : (
+              <div className="manager-summary-grid">
+                {programmerSummary.map((person) => (
+                  <div key={person.id} className="manager-summary-card">
+                    <div className="manager-summary-title">{person.name || person.username}</div>
+                    <div className="manager-summary-subtitle">@{person.username}</div>
+                    <div className="manager-summary-metrics">
+                      <span>Projetos em andamento: <strong>{person.active_projects}</strong></span>
+                      <span>Projetos concluídos: <strong>{person.completed_projects}</strong></span>
+                      <span>Atrasadas: <strong>{person.overdue_tasks}</strong></span>
+                      <span>Pausadas: <strong>{person.paused_tasks}</strong></span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </aside>
         )}
       </div>
 
@@ -616,7 +653,64 @@ export default function Dashboard() {
           margin-top: 4px;
           font-weight: 500;
         }
-        .tasks-section { }
+        .dashboard-main {
+          width: 100%;
+        }
+        .dashboard-main.with-summary {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+          align-items: start;
+        }
+        .tasks-section { min-width: 0; }
+        .manager-summary-section {
+          min-width: 0;
+          position: sticky;
+          top: 16px;
+        }
+        .manager-summary-header h2 {
+          font-size: 16px;
+          font-weight: 700;
+          color: var(--gray-900);
+          margin: 0 0 2px;
+        }
+        .manager-summary-header p {
+          font-size: 12px;
+          color: var(--gray-400);
+          margin: 0 0 12px;
+        }
+        .manager-summary-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+        .manager-summary-card {
+          border: 1px solid var(--gray-200);
+          border-radius: 12px;
+          background: var(--white);
+          padding: 12px;
+          box-shadow: var(--shadow-sm);
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .manager-summary-title {
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--gray-900);
+        }
+        .manager-summary-subtitle {
+          font-size: 11px;
+          color: var(--gray-400);
+          margin-top: -4px;
+        }
+        .manager-summary-metrics {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+          font-size: 12px;
+          color: var(--gray-600);
+        }
         .tasks-header {
           margin-bottom: 16px;
         }
@@ -926,6 +1020,12 @@ export default function Dashboard() {
         }
         @media (max-width: 1100px) {
           .stats-grid, .stats-5 { grid-template-columns: repeat(2, 1fr); }
+          .dashboard-main.with-summary {
+            grid-template-columns: 1fr;
+          }
+          .manager-summary-section {
+            position: static;
+          }
         }
         @media (max-width: 700px) {
           .stats-grid, .stats-5 { grid-template-columns: 1fr; }

@@ -366,7 +366,11 @@ const updateTask = async (req, res) => {
         description = COALESCE(?, description),
         due_date    = COALESCE(?, due_date),
         priority    = COALESCE(?, priority),
-        status      = COALESCE(?, status),
+        status      = CASE
+          -- Não permite manter "overdue" quando o prazo foi movido para o futuro.
+          WHEN COALESCE(?, due_date) > NOW() AND COALESCE(?, status) = 'overdue' THEN 'pending'
+          ELSE COALESCE(?, status)
+        END,
         pause_reason = CASE
           WHEN COALESCE(?, status) IN ('pending', 'completed', 'overdue') THEN NULL
           ELSE pause_reason
@@ -375,7 +379,7 @@ const updateTask = async (req, res) => {
         completed_at = ${completedAtExpr},
         updated_at  = NOW()
       WHERE id = ?`,
-      [title, description, toMysqlDate(due_date), priority, status, status, category_id, id]
+      [title, description, toMysqlDate(due_date), priority, toMysqlDate(due_date), status, status, status, category_id, id]
     );
 
     if (assignees !== undefined) {

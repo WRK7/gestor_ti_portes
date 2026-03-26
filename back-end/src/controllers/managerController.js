@@ -124,6 +124,42 @@ const getDashboard = async (req, res) => {
     const pendingBonif = projects.filter(p => !p.awaiting_params && !p.bonificado);
     const bonificado = projects.filter(p => p.bonificado === 1);
 
+    const [programmerSummary] = await pool.query(`
+      SELECT
+        u.id,
+        u.name,
+        u.username,
+        u.role,
+        COALESCE(ts.pending_tasks, 0) AS pending_tasks,
+        COALESCE(ts.paused_tasks, 0) AS paused_tasks,
+        COALESCE(ts.overdue_tasks, 0) AS overdue_tasks,
+        COALESCE(ts.completed_tasks, 0) AS completed_tasks,
+        -- "Projetos em andamento" = tarefas ainda não concluídas
+        (COALESCE(ts.pending_tasks, 0) + COALESCE(ts.paused_tasks, 0) + COALESCE(ts.overdue_tasks, 0)) AS active_projects,
+        -- "Projetos concluídos" = tarefas concluídas
+        COALESCE(ts.completed_tasks, 0) AS completed_projects
+      FROM users u
+      LEFT JOIN (
+        SELECT
+          ta.user_id,
+          COUNT(DISTINCT CASE WHEN t.status = 'pending' THEN t.id END) AS pending_tasks,
+          COUNT(DISTINCT CASE WHEN t.status = 'paused' THEN t.id END) AS paused_tasks,
+          COUNT(DISTINCT CASE WHEN t.status = 'overdue' THEN t.id END) AS overdue_tasks,
+          COUNT(DISTINCT CASE WHEN t.status = 'completed' THEN t.id END) AS completed_tasks
+        FROM task_assignees_ti ta
+        INNER JOIN tasks_ti t ON t.id = ta.task_id
+        GROUP BY ta.user_id
+      ) ts ON ts.user_id = u.id
+      WHERE
+        u.active = 1
+        AND u.authorizationStatus = 'approved'
+        AND (COALESCE(ts.pending_tasks, 0)
+          + COALESCE(ts.paused_tasks, 0)
+          + COALESCE(ts.overdue_tasks, 0)
+          + COALESCE(ts.completed_tasks, 0)) > 0
+      ORDER BY u.name ASC
+    `);
+
     return res.json({
       pending:   allTasks.filter(t => t.status === 'pending'),
       paused:    allTasks.filter(t => t.status === 'paused'),
@@ -132,6 +168,7 @@ const getDashboard = async (req, res) => {
       bonif_awaiting:  awaiting,
       bonif_pending:   pendingBonif,
       bonif_approved:  bonificado,
+      programmer_summary: programmerSummary,
     });
   } catch (err) {
     console.error('Erro modo gestor:', err.message);

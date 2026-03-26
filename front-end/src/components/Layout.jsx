@@ -664,23 +664,31 @@ export default function Layout() {
           gap: 10px 12px;
         }
         .notif-read-all {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
           font-size: 11px;
           font-weight: 600;
           color: var(--blue-600);
           background: none;
           border: none;
           cursor: pointer;
-          padding: 0;
+          padding: 2px 0;
+          line-height: 1.2;
         }
         .notif-read-all:hover { text-decoration: underline; }
         .notif-clear-read {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
           font-size: 11px;
           font-weight: 600;
           color: var(--gray-500);
           background: none;
           border: none;
           cursor: pointer;
-          padding: 0;
+          padding: 2px 0;
+          line-height: 1.2;
         }
         .notif-clear-read:hover {
           color: var(--red-600);
