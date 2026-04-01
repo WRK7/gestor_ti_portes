@@ -12,6 +12,7 @@ const {
   pauseTask,
   resumeTask,
   deleteTask,
+  fixTaskTimer,
   getCategories,
   getUsers,
 } = require('../controllers/taskController');
@@ -67,6 +68,7 @@ router.put(
 router.patch('/:id/complete', denyRH, [param('id').isInt({ min: 1 })], handleValidation, completeTask);
 router.patch('/:id/pause', denyRH, [param('id').isInt({ min: 1 })], handleValidation, pauseTask);
 router.patch('/:id/resume', denyRH, [param('id').isInt({ min: 1 })], handleValidation, resumeTask);
+router.patch('/:id/fix-timer', [param('id').isInt({ min: 1 })], handleValidation, fixTaskTimer);
 router.delete('/:id', denyRH, [param('id').isInt({ min: 1 })], handleValidation, deleteTask);
 
 module.exports = router;

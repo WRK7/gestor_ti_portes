@@ -154,11 +154,18 @@ const recalcTaskStatus = async (conn, taskId) => {
 
 // current_dev_seconds = sum of all user timers (stored + running)
 // GREATEST(..., 0) garante que nunca temos valores negativos (defasagem de timezone)
+// LEAST(..., days * 28800) limita o tempo rodando a no máximo 8h por dia corrido
 // Fallback = 0 (não usar t.dev_seconds do modelo antigo)
 const TIMER_SUM_SQL = `
   COALESCE((
     SELECT SUM(
-      tut.dev_seconds + GREATEST(COALESCE(TIMESTAMPDIFF(SECOND, tut.timer_started_at, NOW()), 0), 0)
+      tut.dev_seconds + CASE
+        WHEN tut.timer_started_at IS NULL THEN 0
+        ELSE LEAST(
+          GREATEST(COALESCE(TIMESTAMPDIFF(SECOND, tut.timer_started_at, NOW()), 0), 0),
+          (DATEDIFF(NOW(), DATE(tut.timer_started_at)) + 1) * 28800
+        )
+      END
     )
     FROM task_user_timers_ti tut WHERE tut.task_id = t.id
   ), 0)`;
@@ -429,10 +436,13 @@ const pauseTask = async (req, res) => {
 
     await conn.beginTransaction();
 
-    // Acumula tempo do USUÁRIO
+    // Acumula tempo do USUÁRIO — limitado a 8h por dia corrido
     await conn.query(
       `UPDATE task_user_timers_ti SET
-        dev_seconds = dev_seconds + COALESCE(TIMESTAMPDIFF(SECOND, timer_started_at, NOW()), 0),
+        dev_seconds = dev_seconds + LEAST(
+          GREATEST(COALESCE(TIMESTAMPDIFF(SECOND, timer_started_at, NOW()), 0), 0),
+          (DATEDIFF(NOW(), DATE(timer_started_at)) + 1) * 28800
+        ),
         timer_started_at = NULL
       WHERE task_id = ? AND user_id = ?`,
       [id, userId]
@@ -562,10 +572,13 @@ const completeTask = async (req, res) => {
 
     await conn.beginTransaction();
 
-    // Acumula tempo de TODOS os timers ativos
+    // Acumula tempo de TODOS os timers ativos — limitado a 8h por dia corrido
     await conn.query(
       `UPDATE task_user_timers_ti SET
-        dev_seconds = dev_seconds + COALESCE(TIMESTAMPDIFF(SECOND, timer_started_at, NOW()), 0),
+        dev_seconds = dev_seconds + LEAST(
+          GREATEST(COALESCE(TIMESTAMPDIFF(SECOND, timer_started_at, NOW()), 0), 0),
+          (DATEDIFF(NOW(), DATE(timer_started_at)) + 1) * 28800
+        ),
         timer_started_at = NULL
       WHERE task_id = ? AND timer_started_at IS NOT NULL`,
       [id]
@@ -621,6 +634,73 @@ const deleteTask = async (req, res) => {
   }
 };
 
+// Corrige o timer de uma tarefa aplicando o cap de 8h/dia retroativamente.
+// Apenas gestores/admins podem usar.
+const fixTaskTimer = async (req, res) => {
+  const { id } = req.params;
+  const allowedRoles = ['gestor', 'admin', 'superadmin'];
+  if (!allowedRoles.includes(req.user.role)) {
+    return res.status(403).json({ error: 'Apenas gestores podem corrigir timers' });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    const [tasks] = await conn.query('SELECT id, title, status FROM tasks_ti WHERE id = ?', [id]);
+    if (!tasks.length) { conn.release(); return res.status(404).json({ error: 'Tarefa não encontrada' }); }
+
+    const [timers] = await conn.query(
+      'SELECT user_id, dev_seconds, timer_started_at FROM task_user_timers_ti WHERE task_id = ?',
+      [id]
+    );
+
+    await conn.beginTransaction();
+
+    for (const timer of timers) {
+      if (!timer.timer_started_at) continue;
+
+      // Calcula tempo com cap: mínimo entre elapsed e 8h × dias corridos
+      await conn.query(
+        `UPDATE task_user_timers_ti SET
+          dev_seconds = dev_seconds + LEAST(
+            GREATEST(COALESCE(TIMESTAMPDIFF(SECOND, timer_started_at, NOW()), 0), 0),
+            (DATEDIFF(NOW(), DATE(timer_started_at)) + 1) * 28800
+          ),
+          timer_started_at = NOW()
+        WHERE task_id = ? AND user_id = ?`,
+        [id, timer.user_id]
+      );
+    }
+
+    await conn.commit();
+
+    const [updated] = await pool.query(
+      `SELECT user_id, dev_seconds FROM task_user_timers_ti WHERE task_id = ?`,
+      [id]
+    );
+
+    const totalSeconds = updated.reduce((sum, r) => sum + (r.dev_seconds || 0), 0);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+
+    await record(
+      req.user,
+      'corrigiu timer',
+      'tarefa',
+      parseInt(id),
+      tasks[0].title,
+      `Timer corrigido com cap de 8h/dia. Total acumulado: ${h}h ${m}min`
+    );
+
+    return res.json({ message: 'Timer corrigido com sucesso', total_dev_seconds: totalSeconds, display: `${h}h ${m}min` });
+  } catch (err) {
+    await conn.rollback();
+    console.error('Erro corrigir timer:', err);
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  } finally {
+    conn.release();
+  }
+};
+
 const getCategories = async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM task_categories_ti ORDER BY name');
@@ -654,6 +734,7 @@ module.exports = {
   pauseTask,
   resumeTask,
   deleteTask,
+  fixTaskTimer,
   getCategories,
   getUsers,
 };
